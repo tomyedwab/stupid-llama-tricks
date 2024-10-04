@@ -20,9 +20,11 @@ class MatchPattern(Action):
         self.current_match = ""
 
 class FeedText(Action):
-    def __init__(self, text: bytes):
+    def __init__(self, text: bytes, calculate_likelihood: bool = False):
         self.type = "feed_text"
         self.text = text
+        self.calculate_likelihood = calculate_likelihood
+        self.likelihood = None
 
 class Completion(Action):
     def __init__(self, max_tokens: int):

@@ -7,7 +7,6 @@ import llama_cpp
 
 from typing import List
 
-from .beam import LlamaBeam
 from .model_config import ModelConfig
 from .request import LlamaRequest
 
@@ -39,35 +38,28 @@ class Llama(object):
         self.requests.append(request)
         return request
 
-    # TODO: Revisit response from this function
-    def get_response(self, request: LlamaRequest):
-        if not request.completed:
-            return None
-        return [
-            {
-                "response": beam.response,
-                "state_result": request.state_result,
-            }
-            for beam in request.beams
-        ]
-
-    async def await_response(self, request: LlamaRequest):
-        while not request.completed:
-            await asyncio.sleep(0.1)
-        return self.get_response(request)
-
     def _run_batch(self, requests: List[LlamaRequest]):
         batch = llama_cpp.llama_batch_init(self.batch_size, 0, 1)
         logits = [[None] * len(requests)]
-
-        # Assign initial sequence numbers for each request
         seq_num = 0
-        for request in requests:
-            request.beams[0].seq_num = seq_num
-            request.seq_num = seq_num
-            seq_num += len(request.beams)
 
         while True:
+            # First check if any beams are waiting to be initialized
+            for request_idx, request in enumerate(requests):
+                if len(logits[request_idx]) < len(request.beams):
+                    logits[request_idx].extend([None] * (len(request.beams) - len(logits[request_idx])))
+                for beam_idx, beam in enumerate(request.beams):
+                    if beam.seq_num == -1:
+                        # Copy the KV cache & logits for the current beam to the
+                        # new beam and assign the new sequence number
+                        if beam.parent is not None:
+                            llama_cpp.llama_kv_cache_seq_cp(self.ctx, beam.parent.seq_num, seq_num, -1, -1)
+                            logits[request_idx][beam_idx] = logits[request_idx][beam.parent.index]
+                        beam.seq_num = seq_num
+                        seq_num += 1
+
+            # Next, check if any beams are waiting for a batch of fixed tokens
+            # to be decoded
             for request_idx, request in enumerate(requests):
                 for beam_idx, beam in enumerate(request.beams):
                     decoded_logits = beam.decode_tokens(self.ctx, self.model, batch, self.batch_size)
@@ -78,6 +70,8 @@ class Llama(object):
             beam_index_map = {}
             for request_idx, request in enumerate(requests):
                 for beam_idx, beam in enumerate(request.beams):
+                    if beam_idx >= len(logits[request_idx]):
+                        continue
                     next_token_id = beam.decode_next(
                         self.ctx,
                         self.model,
@@ -95,6 +89,8 @@ class Llama(object):
                         batch.logits[batch.n_tokens] = True
                         batch.n_tokens += 1
                         beam.pos += 1
+
+            # TODO: Clean up KV cache for finished beams
 
             if batch.n_tokens == 0:
                 all_done = all(beam.is_done() for request in requests for beam in request.beams)
@@ -123,7 +119,8 @@ class Llama(object):
             request.completed = True
 
     def _process_queue(self, run_forever: bool = True):
-        idle_count = 0
+        # TODO: Replace this with a queue that can schedule & deschedule
+        # individual beams dynamically
         while True:
             pending_requests = list(filter(lambda x: not x.completed, self.requests))
             if not pending_requests:

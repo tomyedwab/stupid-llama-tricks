@@ -11,12 +11,19 @@ from .util import token_to_string
 class LlamaBeam(object):
     def __init__(
             self,
-            initial_response: Optional[str] = ""
+            index: int,
+            parent: "LlamaBeam" = None,
         ):
-        self.seq_num = None
-        self.pos = 0
+        self.index = index
+        self.parent = parent
+        if parent is not None:
+            self.response = parent.response
+            self.pos = parent.pos
+        else:
+            self.pos = 0
+            self.response = ""
+        self.seq_num = -1
         self.current_action = Wait()
-        self.response = initial_response
 
     def is_done(self) -> bool:
         return isinstance(self.current_action, Done)
@@ -26,11 +33,11 @@ class LlamaBeam(object):
 
     def wait_for_action(self):
         if isinstance(self.current_action, Wait):
-            logging.info(f"Waiting for next action")
+            logging.info(f"Beam {self.index}: Waiting for next action")
             while isinstance(self.current_action, Wait):
                 # Wait for the next async event
                 time.sleep(0.1)
-            logging.info(f"Got action {type(self.current_action)}")
+            logging.info(f"Beam {self.index}: Got action {type(self.current_action)}")
 
     def decode_next(
             self,
@@ -51,8 +58,11 @@ class LlamaBeam(object):
             action = self.current_action
             output = [(logits[i], i) for i in range(vocab_size)]
             output.sort(reverse=True)
+            selected_token = None
             for logit, token_id in output:
                 match_candidate = action.current_match + token_to_string(model, token_id)
+                if match_candidate.strip() == action.current_match.strip():
+                    continue
                 match = self.current_action.pattern.match(match_candidate, partial=True)
                 if match is not None:
                     action.current_match = match_candidate
@@ -61,6 +71,9 @@ class LlamaBeam(object):
                     if not match.partial:
                         self.current_action = Wait()
                     break
+            if selected_token is None:
+                # None of the available tokens allow us to match the target
+                self.current_action = Wait()
 
         elif isinstance(self.current_action, Completion):
             # Do normal top-p sampling
@@ -123,6 +136,8 @@ class LlamaBeam(object):
             self.current_action = Wait()
             return None
 
+        self.current_action.likelihood = 0.0
+
         for start in range(0, n_tokens, batch_size):
             end = min(start + batch_size, n_tokens)
             for i in range(start, end):
@@ -130,13 +145,18 @@ class LlamaBeam(object):
                 batch.pos[i-start] = self.pos
                 batch.n_seq_id[i-start] = 1
                 batch.seq_id[i-start][0] = self.seq_num
-                batch.logits[i-start] = i == (n_tokens - 1)
+                batch.logits[i-start] = self.current_action.calculate_likelihood or (i == (n_tokens - 1))
                 self.pos += 1
             batch.n_tokens = end - start
 
             ret = llama_cpp.llama_decode(ctx, batch)
             if ret != 0:
                 raise Exception(f"Llama error {ret} with batch size {end - start} after tokenizing {start} tokens")
+
+            if self.current_action.calculate_likelihood:
+                for idx in range(end - start - 1):
+                    logits = llama_cpp.llama_get_logits_ith(ctx, idx)
+                    self.current_action.likelihood += logits[tokens[idx + 1]]
 
         logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
         self.response += self.current_action.text
