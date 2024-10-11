@@ -13,18 +13,23 @@ from .request import LlamaRequest
 class Llama(object):
     def __init__(self, config: ModelConfig):
         llama_cpp.llama_backend_init(False) # Must be called once at the start of each program
-        model_params = llama_cpp.llama_model_default_params()
-        model_params.n_gpu_layers = 33
-        params = llama_cpp.llama_context_default_params()
-        params.n_ctx = config.context_size
-        self.model = llama_cpp.llama_load_model_from_file(config.model_filename.encode('utf-8'), model_params)
-        self.ctx = llama_cpp.llama_new_context_with_model(self.model, params)
-        self.context_size = params.n_ctx
-        self.vocab_size = llama_cpp.llama_n_vocab(self.model)
+        self.model_params = llama_cpp.llama_model_default_params()
+        self.model_params.n_gpu_layers = 33
+        self.params = llama_cpp.llama_context_default_params()
+        self.params.n_ctx = config.context_size
+        self.context_size = self.params.n_ctx
         self.temperature = config.temperature
-        self.requests = []
         self.batch_size = config.batch_size
         self.batch_max_tokens = config.batch_max_tokens
+        self.model_filename = config.model_filename
+        self.requests = []
+        self.stop_requested = False
+        self.next_seq_num = 0
+
+    def _start(self):
+        self.model = llama_cpp.llama_load_model_from_file(self.model_filename.encode('utf-8'), self.model_params)
+        self.ctx = llama_cpp.llama_new_context_with_model(self.model, self.params)
+        self.vocab_size = llama_cpp.llama_n_vocab(self.model)
 
         _arr = (llama_cpp.llama_token_data * self.vocab_size)(
             *[
@@ -34,110 +39,133 @@ class Llama(object):
         )
         self.candidates_p = llama_cpp.ctypes.pointer(llama_cpp.llama_token_data_array(_arr, len(_arr), False))
 
-    def queue_request(self, request: LlamaRequest) -> LlamaRequest:
+        self.batch = llama_cpp.llama_batch_init(self.batch_size, 0, 1)
+
+    def _stop(self):
+        llama_cpp.llama_batch_free(self.batch)
+        llama_cpp.llama_kv_cache_clear(self.ctx)
+        llama_cpp.llama_free(self.ctx)
+
+    async def do_request(self, request: LlamaRequest) -> any:
+        print(f"Queuing request {request.id}")
         self.requests.append(request)
-        return request
+        request.start_task(asyncio.get_event_loop())
+        return await request.get_result()
 
-    def _run_batch(self, requests: List[LlamaRequest]):
-        batch = llama_cpp.llama_batch_init(self.batch_size, 0, 1)
-        logits = [[None] * len(requests)]
-        seq_num = 0
+    def request_stop(self):
+        self.stop_requested = True
 
-        while True:
-            # First check if any beams are waiting to be initialized
-            for request_idx, request in enumerate(requests):
-                if len(logits[request_idx]) < len(request.beams):
-                    logits[request_idx].extend([None] * (len(request.beams) - len(logits[request_idx])))
-                for beam_idx, beam in enumerate(request.beams):
-                    if beam.seq_num == -1:
-                        # Copy the KV cache & logits for the current beam to the
-                        # new beam and assign the new sequence number
-                        if beam.parent is not None:
-                            llama_cpp.llama_kv_cache_seq_cp(self.ctx, beam.parent.seq_num, seq_num, -1, -1)
-                            logits[request_idx][beam_idx] = logits[request_idx][beam.parent.index]
-                        beam.seq_num = seq_num
-                        seq_num += 1
+    async def _update_requests(self):
+        # Wait for all beams to select their next action
+        await asyncio.gather(*[
+            beam.wait_for_next_action()
+            for request in self.requests
+            for beam in request.beams
+        ])
 
-            # Next, check if any beams are waiting for a batch of fixed tokens
-            # to be decoded
-            for request_idx, request in enumerate(requests):
-                for beam_idx, beam in enumerate(request.beams):
-                    decoded_logits = beam.decode_tokens(self.ctx, self.model, batch, self.batch_size)
-                    if decoded_logits is not None:
-                        logits[request_idx][beam_idx] = decoded_logits
+    def _schedule_runnable_beams(self):
+        # First find any beams that are scheduled that are marked "done"
+        for request in self.requests:
+            for beam in request.beams:
+                if beam.seq_num >= 0 and beam.is_done():
+                    print(f"Descheduling beam {beam.index} for request {request.id} because it is done")
+                    llama_cpp.llama_kv_cache_seq_rm(self.ctx, beam.seq_num, -1, -1)
+                    beam.logits = None
+                    beam.seq_num = -1
 
-            batch.n_tokens = 0
-            beam_index_map = {}
-            for request_idx, request in enumerate(requests):
-                for beam_idx, beam in enumerate(request.beams):
-                    if beam_idx >= len(logits[request_idx]):
+        for request in self.requests:
+            for beam in request.beams:
+                if beam.seq_num >= 0 or not beam.is_runnable():
+                    continue
+
+                new_seq_num = self.next_seq_num
+
+                # TODO: If a beam was previously descheduled, recover its KV cache
+                # Is the beam being initialized from a parent beam?
+                if beam.parent is not None:
+                    if beam.parent.seq_num < 0:
+                        # The parent is not itself initialized yet, so we need to wait
                         continue
-                    next_token_id = beam.decode_next(
-                        self.ctx,
-                        self.model,
-                        self.vocab_size,
-                        self.temperature,
-                        logits[request_idx][beam_idx],
-                        self.candidates_p,
-                    )
-                    if next_token_id is not None:
-                        beam_index_map[(request_idx, beam_idx)] = batch.n_tokens
-                        batch.token[batch.n_tokens] = next_token_id
-                        batch.pos[batch.n_tokens] = beam.pos
-                        batch.n_seq_id[batch.n_tokens] = 1
-                        batch.seq_id[batch.n_tokens][0] = beam.seq_num
-                        batch.logits[batch.n_tokens] = True
-                        batch.n_tokens += 1
-                        beam.pos += 1
+                    # Copy the KV cache & logits for the current beam to the
+                    # new beam and assign the new sequence number
+                    llama_cpp.llama_kv_cache_seq_cp(self.ctx, beam.parent.seq_num, new_seq_num, -1, -1)
+                    beam.logits = beam.parent.logits
 
-            # TODO: Clean up KV cache for finished beams
+                print(f"Assigning request {request.id} beam {beam.index} seq_num {new_seq_num}")
+                beam.seq_num = new_seq_num
+                self.next_seq_num += 1
 
-            if batch.n_tokens == 0:
-                all_done = all(beam.is_done() for request in requests for beam in request.beams)
-                if all_done:
-                    break
-                continue
+    async def _decode_beam_tokens(self):
+        for request in self.requests:
+            for beam in request.beams:
+                if beam.seq_num < 0:
+                    continue
 
-            ret = llama_cpp.llama_decode(self.ctx, batch)
+                if not await beam.decode_tokens(self.ctx, self.model, self.batch, self.batch_size):
+                    # There was an error decoding tokens, so deschedule the beam for now
+                    print(f"Descheduling beam {beam.index} for request {request.id} due to error")
+                    llama_cpp.llama_kv_cache_seq_rm(self.ctx, beam.seq_num, -1, -1)
+                    beam.seq_num = -1
+                    beam.logits = None
+    
+    async def _decode_batch(self):
+        self.batch.n_tokens = 0
+        # Map each token index to the beam that produced it
+        beam_result_indices = {}
+
+        # Iterate over all beams and decode tokens
+        for request in self.requests:
+            for beam in request.beams:
+                if beam.logits is None:
+                    continue
+                next_token_id = await beam.decode_next(
+                    self.ctx,
+                    self.model,
+                    self.vocab_size,
+                    self.temperature,
+                    self.candidates_p,
+                )
+
+                if next_token_id is not None:
+                    beam_result_indices[self.batch.n_tokens] = beam
+                    self.batch.token[self.batch.n_tokens] = next_token_id
+                    self.batch.pos[self.batch.n_tokens] = beam.pos
+                    self.batch.n_seq_id[self.batch.n_tokens] = 1
+                    self.batch.seq_id[self.batch.n_tokens][0] = beam.seq_num
+                    self.batch.logits[self.batch.n_tokens] = True
+                    self.batch.n_tokens += 1
+                    beam.pos += 1
+
+        if self.batch.n_tokens > 0:
+            ret = llama_cpp.llama_decode(self.ctx, self.batch)
             if ret != 0:
+                # TODO: Deschedule beams until this succeeds
                 raise Exception("LLAMA ERROR " + str(ret))
 
-            logits = [
-                [
-                    llama_cpp.llama_get_logits_ith(self.ctx, beam_index_map[(request_idx, beam_idx)])
-                    if (request_idx, beam_idx) in beam_index_map else None
-                    for beam_idx in range(len(request.beams))
-                ]
-                for request_idx, request in enumerate(requests)
-            ]
+            for request in self.requests:
+                for beam in request.beams:
+                    beam.logits = None
 
-        llama_cpp.llama_batch_free(batch)
-        llama_cpp.llama_kv_cache_clear(self.ctx)
+            for token_idx, beam in beam_result_indices.items():
+                beam.logits = llama_cpp.llama_get_logits_ith(self.ctx, token_idx)
 
-        for request in requests:
-            logging.info(f"Completed request {request.id}")
-            request.completed = True
+    async def run(self):
+        self._start()
+        while not self.stop_requested:
+            # First, update the state of all requests
+            await self._update_requests()
 
-    def _process_queue(self, run_forever: bool = True):
-        # TODO: Replace this with a queue that can schedule & deschedule
-        # individual beams dynamically
-        while True:
-            pending_requests = list(filter(lambda x: not x.completed, self.requests))
-            if not pending_requests:
-                if not run_forever:
-                    break
-                logging.info("Queue: No pending requests")
-                time.sleep(1.0)
-                continue
-            self._run_batch([pending_requests[0]])
-            time.sleep(1.0)
+            # Schedule any runnable beams
+            self._schedule_runnable_beams()
 
-    def run_in_background(self):
-        thread = threading.Thread(target=self._process_queue, daemon=True)
-        thread.start()
+            # Decode fixed tokens (e.g. prompts) for any runnable beams
+            await self._decode_beam_tokens()
 
-    def run_once(self):
-        self._process_queue(run_forever=False)
+            # Decode the next batch of tokens
+            await self._decode_batch()
 
-    def cleanup(self):
-        llama_cpp.llama_free(self.ctx)
+            # Yield control back to the event loop so that we don't starve other
+            # tasks
+            await asyncio.sleep(0)
+
+        self._stop()

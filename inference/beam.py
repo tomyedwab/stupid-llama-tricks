@@ -1,3 +1,4 @@
+import asyncio
 import ctypes
 import logging
 import time
@@ -24,39 +25,46 @@ class LlamaBeam(object):
             self.response = ""
         self.seq_num = -1
         self.current_action = Wait()
+        self.logits = None
 
     def is_done(self) -> bool:
         return isinstance(self.current_action, Done)
 
-    def set_action(self, action: Action):
+    def is_runnable(self) -> bool:
+        return not isinstance(self.current_action, Wait) and not self.is_done()
+
+    async def set_action(self, action: Action):
+        previous_action = self.current_action
         self.current_action = action
+        async with previous_action.wait_condition:
+            previous_action.wait_condition.notify_all()
 
-    def wait_for_action(self):
-        if isinstance(self.current_action, Wait):
-            logging.info(f"Beam {self.index}: Waiting for next action")
-            while isinstance(self.current_action, Wait):
-                # Wait for the next async event
-                time.sleep(0.1)
-            logging.info(f"Beam {self.index}: Got action {type(self.current_action)}")
+    async def wait_for_next_action(self) -> bool:
+        current_action = self.current_action
+        if not isinstance(current_action, Wait):
+            return True
+        try:
+            async with current_action.wait_condition:
+                await asyncio.wait_for(current_action.wait_condition.wait(), timeout=0.1)
+        except asyncio.TimeoutError:
+            return False
+        return True
 
-    def decode_next(
+    async def decode_next(
             self,
             ctx: llama_cpp.llama_context_p,
             model: llama_cpp.llama_model_p,
             vocab_size: int,
             temperature: float,
-            logits: List[float],
             candidates_p: llama_cpp.llama_token_data_array,
-        ):
+        ) -> Optional[llama_cpp.llama_token]:
         if self.is_done():
             return None
-
-        self.wait_for_action()
 
         if isinstance(self.current_action, MatchPattern):
             # Choose the top token that allows us to match the target
             action = self.current_action
-            output = [(logits[i], i) for i in range(vocab_size)]
+            output = [(self.logits[i], i) for i in range(vocab_size)]
             output.sort(reverse=True)
             selected_token = None
             for logit, token_id in output:
@@ -69,17 +77,17 @@ class LlamaBeam(object):
                     selected_token = token_id
                     action.current_match_logit += logit
                     if not match.partial:
-                        self.current_action = Wait()
+                        await self.set_action(Wait())
                     break
             if selected_token is None:
                 # None of the available tokens allow us to match the target
-                self.current_action = Wait()
+                await self.set_action(Wait())
 
         elif isinstance(self.current_action, Completion):
             # Do normal top-p sampling
             for token_id in range(vocab_size):
                 candidates_p.contents.data[token_id].id = llama_cpp.llama_token(token_id)
-                candidates_p.contents.data[token_id].logit = llama_cpp.ctypes.c_float(logits[token_id])
+                candidates_p.contents.data[token_id].logit = llama_cpp.ctypes.c_float(self.logits[token_id])
             candidates_p.contents.size = vocab_size
             llama_cpp.llama_sample_temp(ctx, candidates_p, temperature)
             llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.9, 1)
@@ -97,24 +105,24 @@ class LlamaBeam(object):
             action.remaining_tokens -= 1
 
             if llama_cpp.llama_token_is_eog(model, selected_token):
-                self.current_action = Wait()
+                await self.set_action(Wait())
                 return None
 
             elif "<|end|>" in action.response_text:
                 action.response_text = action.response_text.replace("<|end|>", "")
-                self.current_action = Wait()
+                await self.set_action(Wait())
                 return None
 
             elif action.remaining_tokens < 1:
-                self.current_action = Wait()
+                await self.set_action(Wait())
 
         if selected_token is None:
-            self.current_action = Wait()
+            await self.set_action(Wait())
             return None
 
         return selected_token
 
-    def decode_tokens(
+    async def decode_tokens(
             self,
             ctx: llama_cpp.llama_context_p,
             model: llama_cpp.llama_model_p,
@@ -122,19 +130,17 @@ class LlamaBeam(object):
             batch_size: int,
         ) -> ctypes.Array[ctypes.c_float]:
         if self.is_done():
-            return None
+            return False
         
-        self.wait_for_action()
-
         if not isinstance(self.current_action, FeedText):
-            return None
+            return True
 
         encoded = self.current_action.text.encode('utf-8')
         tokens = (llama_cpp.llama_token * int(4096))()
         n_tokens = llama_cpp.llama_tokenize(model, encoded, len(encoded), tokens, 4096, True, False)
         if n_tokens == 0:
-            self.current_action = Wait()
-            return None
+            await self.set_action(Wait())
+            return True
 
         self.current_action.likelihood = 0.0
 
@@ -151,15 +157,17 @@ class LlamaBeam(object):
 
             ret = llama_cpp.llama_decode(ctx, batch)
             if ret != 0:
-                raise Exception(f"Llama error {ret} with batch size {end - start} after tokenizing {start} tokens")
+                #raise Exception(f"Llama error {ret} with batch size {end - start} after tokenizing {start} tokens")
+                print(f"Llama error {ret} with batch size {end - start} after tokenizing {start} tokens")
+                return False
 
             if self.current_action.calculate_likelihood:
                 for idx in range(end - start - 1):
                     logits = llama_cpp.llama_get_logits_ith(ctx, idx)
                     self.current_action.likelihood += logits[tokens[idx + 1]]
 
-        logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
+        self.logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
         self.response += self.current_action.text
-        self.current_action = Wait()
+        await self.set_action(Wait())
 
-        return logits
+        return True

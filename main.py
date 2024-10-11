@@ -9,12 +9,14 @@ from inference.request import LlamaRequest, ForkArguments
 # Log to stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-async def test_regex(request: LlamaRequest):
+async def test_fork(request: LlamaRequest):
+    print("Starting test_fork task")
     await request.feed_text(
         "<|system|>\nYou are a helpful assistant.<|end|>\n" +
         "<|user|>\nJoey said something very hurtful to Sally. How does Sally feel?<|end|>\n" +
         "<|assistant|>\n"
     )
+    logging.info("Done with prompt")
 
     async def get_text_likelihood(request: LlamaRequest, text: str):
         likelihood = await request.feed_text(text, calculate_likelihood=True)
@@ -28,12 +30,18 @@ async def test_regex(request: LlamaRequest):
 
     # Sort matches by logit & take the most likely one
     all_matches.sort(key=lambda x: x["likelihood"], reverse=True)
-    sentiment = all_matches[0]["text"].split(" ")[-1]
+    sentiment = all_matches[0]["text"].split(" ")[-1][:-1]
+
     await request.feed_text(f"\n<|user|>\nWhy does she feel {sentiment}?<|end|>\n<|assistant|>\n")
 
     justification = await request.completion(100)
 
-    return f"The AI feels {sentiment} because: {justification}"
+    return f"The AI predicts that Sally feels {sentiment}. The AI's reasoning is: {justification}"
+
+async def run_requests(llama: Llama):
+    result = await llama.do_request(LlamaRequest(test_fork))
+    print(result)
+    llama.request_stop()
 
 async def main():
     config = ModelConfig(
@@ -45,10 +53,10 @@ async def main():
         batch_max_tokens=2048,
     )
     llama = Llama(config)
-    request = llama.queue_request(LlamaRequest(test_regex))
-    llama.run_in_background()
-    response = await request.get_result()
-    print(response)
+    await asyncio.gather(*[
+        llama.run(),
+        run_requests(llama),
+    ])
 
 if __name__ == "__main__":
     asyncio.run(main())
