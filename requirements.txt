@@ -1,3 +1,4 @@
 pydantic==2.9.2
 llama-cpp-python==0.2.90
 regex==2024.9.11
+tornado==6.4.1

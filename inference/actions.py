@@ -1,5 +1,6 @@
 import asyncio
 import regex
+from typing import List
 
 class Action(object):
     def __init__(self):
@@ -33,6 +34,14 @@ class FeedText(Action):
         super().__init__()
         self.type = "feed_text"
         self.text = text
+        self.calculate_likelihood = calculate_likelihood
+        self.likelihood = None
+
+class FeedTokens(Action):
+    def __init__(self, tokens: List[int], calculate_likelihood: bool = False):
+        super().__init__()
+        self.type = "feed_tokens"
+        self.tokens = tokens
         self.calculate_likelihood = calculate_likelihood
         self.likelihood = None
 

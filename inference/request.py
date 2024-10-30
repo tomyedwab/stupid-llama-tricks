@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Awaitable, List, Dict
 
 from .beam import LlamaBeam
-from .actions import MatchPattern, FeedText, Done, Wait, Completion
+from .actions import MatchPattern, FeedText, FeedTokens, Done, Wait, Completion
 
 beam_idx = contextvars.ContextVar('Beam index of the active state function')
 
@@ -58,6 +58,13 @@ class LlamaRequest(object):
     async def feed_text(self, text: str, calculate_likelihood: bool = False):
         current_beam_idx = beam_idx.get()
         action = FeedText(text, calculate_likelihood)
+        await self.beams[current_beam_idx].set_action(action)
+        await action.wait()
+        return action.likelihood
+
+    async def feed_tokens(self, tokens: List[int], calculate_likelihood: bool = False):
+        current_beam_idx = beam_idx.get()
+        action = FeedTokens(tokens, calculate_likelihood)
         await self.beams[current_beam_idx].set_action(action)
         await action.wait()
         return action.likelihood

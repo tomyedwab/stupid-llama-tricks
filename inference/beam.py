@@ -6,7 +6,7 @@ from typing import Any, Optional, List
 
 import llama_cpp
 
-from .actions import Action, Wait, Done, MatchPattern, FeedText, Completion
+from .actions import Action, Wait, Done, MatchPattern, FeedText, FeedTokens, Completion
 from .util import token_to_string
 
 class LlamaBeam(object):
@@ -132,15 +132,19 @@ class LlamaBeam(object):
         if self.is_done():
             return False
         
-        if not isinstance(self.current_action, FeedText):
+        if not isinstance(self.current_action, FeedText) and not isinstance(self.current_action, FeedTokens):
             return True
 
-        encoded = self.current_action.text.encode('utf-8')
-        tokens = (llama_cpp.llama_token * int(4096))()
-        n_tokens = llama_cpp.llama_tokenize(model, encoded, len(encoded), tokens, 4096, True, False)
-        if n_tokens == 0:
-            await self.set_action(Wait())
-            return True
+        if isinstance(self.current_action, FeedText):
+            encoded = self.current_action.text.encode('utf-8')
+            tokens = (llama_cpp.llama_token * int(4096))()
+            n_tokens = llama_cpp.llama_tokenize(model, encoded, len(encoded), tokens, 4096, True, False)
+            if n_tokens == 0:
+                await self.set_action(Wait())
+                return True
+        elif isinstance(self.current_action, FeedTokens):
+            tokens = self.current_action.tokens
+            n_tokens = len(self.current_action.tokens)
 
         self.current_action.likelihood = 0.0
 
@@ -167,7 +171,10 @@ class LlamaBeam(object):
                     self.current_action.likelihood += logits[tokens[idx + 1]]
 
         self.logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
-        self.response += self.current_action.text
+        if isinstance(self.current_action, FeedText):
+            self.response += self.current_action.text
+        elif isinstance(self.current_action, FeedTokens):
+            self.response += "".join(token_to_string(model, token) for token in self.current_action.tokens)
         await self.set_action(Wait())
 
         return True

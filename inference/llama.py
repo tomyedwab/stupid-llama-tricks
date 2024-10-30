@@ -46,6 +46,12 @@ class Llama(object):
         llama_cpp.llama_kv_cache_clear(self.ctx)
         llama_cpp.llama_free(self.ctx)
 
+    def tokenize(self, text: str) -> List[int]:
+        encoded = text.encode('utf-8')
+        tokens = (llama_cpp.llama_token * int(4096))()
+        n_tokens = llama_cpp.llama_tokenize(self.model, encoded, len(encoded), tokens, 4096, True, False)
+        return list(tokens[:n_tokens])
+
     async def do_request(self, request: LlamaRequest) -> any:
         print(f"Queuing request {request.id}")
         self.requests.append(request)
