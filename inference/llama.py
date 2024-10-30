@@ -107,7 +107,7 @@ class Llama(object):
                 if beam.seq_num < 0:
                     continue
 
-                if not await beam.decode_tokens(self.ctx, self.model, self.batch, self.batch_size):
+                if not await beam.decode_tokens(self.ctx, self.model, self.vocab_size, self.candidates_p, self.batch, self.batch_size):
                     # There was an error decoding tokens, so deschedule the beam for now
                     print(f"Descheduling beam {beam.index} for request {request.id} due to error")
                     llama_cpp.llama_kv_cache_seq_rm(self.ctx, beam.seq_num, -1, -1)

@@ -1,0 +1,38 @@
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+.conversation-block {
+    display: flex;
+    flex-direction: row;
+    position: relative;
+}
+
+.conversation-block label {
+    flex: 1 0 0;
+}
+.conversation-block textarea,
+.conversation-block .result {
+    flex: 5 0 0;
+}
+.conversation-block .indicator {
+    display: none;
+    position: absolute;
+    right: 16px;
+    bottom: 0;
+}
+
+.conversation-block .indicator.loading {
+    display: block;
+    color: #999;
+}
+
+.conversation-block .indicator.valid {
+    display: block;
+    color: #0f0;
+}
+
+.conversation-block .hidden {
+    display: none;
+}

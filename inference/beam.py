@@ -6,7 +6,7 @@ from typing import Any, Optional, List
 
 import llama_cpp
 
-from .actions import Action, Wait, Done, MatchPattern, FeedText, FeedTokens, Completion
+from .actions import Action, Wait, Done, MatchPattern, FeedTokens, Completion
 from .util import token_to_string
 
 class LlamaBeam(object):
@@ -89,9 +89,17 @@ class LlamaBeam(object):
                 candidates_p.contents.data[token_id].id = llama_cpp.llama_token(token_id)
                 candidates_p.contents.data[token_id].logit = llama_cpp.ctypes.c_float(self.logits[token_id])
             candidates_p.contents.size = vocab_size
+            candidates_p.contents.sorted = False
             llama_cpp.llama_sample_temp(ctx, candidates_p, temperature)
-            llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.9, 1)
+            llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.9, max(1, self.current_action.top_p))
             selected_token = llama_cpp.llama_sample_token(ctx, candidates_p)
+            if self.current_action.top_p > 0:
+                self.current_action.logits.append([
+                    (tkn.id, tkn.logit)
+                    for tkn in candidates_p.contents.data[:self.current_action.top_p]
+                ])
+                if selected_token not in self.current_action.token_map:
+                    self.current_action.token_map[selected_token] = token_to_string(model, selected_token)
 
         else:
             return None
@@ -126,36 +134,31 @@ class LlamaBeam(object):
             self,
             ctx: llama_cpp.llama_context_p,
             model: llama_cpp.llama_model_p,
+            vocab_size: int,
+            candidates_p: llama_cpp.llama_token_data_array,
             batch: llama_cpp.llama_batch,
             batch_size: int,
         ) -> ctypes.Array[ctypes.c_float]:
         if self.is_done():
             return False
         
-        if not isinstance(self.current_action, FeedText) and not isinstance(self.current_action, FeedTokens):
+        if not isinstance(self.current_action, FeedTokens):
             return True
 
-        if isinstance(self.current_action, FeedText):
-            encoded = self.current_action.text.encode('utf-8')
-            tokens = (llama_cpp.llama_token * int(4096))()
-            n_tokens = llama_cpp.llama_tokenize(model, encoded, len(encoded), tokens, 4096, True, False)
-            if n_tokens == 0:
-                await self.set_action(Wait())
-                return True
-        elif isinstance(self.current_action, FeedTokens):
-            tokens = self.current_action.tokens
-            n_tokens = len(self.current_action.tokens)
+        tokens = self.current_action.tokens
+        top_tokens = {token for token in tokens}
+        if self.current_action.top_p > 0:
+            self.current_action.logits = [[]] * len(tokens)
+            self.current_action.logits[0] = [(tokens[0], 0.0)]
 
-        self.current_action.likelihood = 0.0
-
-        for start in range(0, n_tokens, batch_size):
-            end = min(start + batch_size, n_tokens)
+        for start in range(0, len(tokens), batch_size):
+            end = min(start + batch_size, len(tokens))
             for i in range(start, end):
                 batch.token[i-start] = tokens[i]
                 batch.pos[i-start] = self.pos
                 batch.n_seq_id[i-start] = 1
                 batch.seq_id[i-start][0] = self.seq_num
-                batch.logits[i-start] = self.current_action.calculate_likelihood or (i == (n_tokens - 1))
+                batch.logits[i-start] = (self.current_action.top_p > 0) or (i == (len(tokens) - 1))
                 self.pos += 1
             batch.n_tokens = end - start
 
@@ -165,16 +168,32 @@ class LlamaBeam(object):
                 print(f"Llama error {ret} with batch size {end - start} after tokenizing {start} tokens")
                 return False
 
-            if self.current_action.calculate_likelihood:
+            if self.current_action.top_p > 0:
                 for idx in range(end - start - 1):
                     logits = llama_cpp.llama_get_logits_ith(ctx, idx)
-                    self.current_action.likelihood += logits[tokens[idx + 1]]
+                    selected = None
+                    # Get top p logits and store their indices
+                    for token_id in range(vocab_size):
+                        candidates_p.contents.data[token_id].id = llama_cpp.llama_token(token_id)
+                        candidates_p.contents.data[token_id].logit = llama_cpp.ctypes.c_float(logits[token_id])
+                        if token_id == tokens[idx + 1 + start]:
+                            selected = (token_id, logits[token_id])
+                    candidates_p.contents.size = vocab_size
+                    candidates_p.contents.sorted = False
+                    llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.9, self.current_action.top_p)
+                    self.current_action.logits[idx + 1 + start] = [
+                        (tkn.id, tkn.logit)
+                        for tkn in candidates_p.contents.data[:self.current_action.top_p]
+                    ]
+                    if selected not in self.current_action.logits[idx + 1 + start]:
+                        self.current_action.logits[idx + 1 + start].append(selected)
+                    top_tokens.update(tkn.id for tkn in candidates_p.contents.data[:self.current_action.top_p])
+
+        for token_id in top_tokens:
+            self.current_action.token_map[token_id] = token_to_string(model, token_id)
 
         self.logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
-        if isinstance(self.current_action, FeedText):
-            self.response += self.current_action.text
-        elif isinstance(self.current_action, FeedTokens):
-            self.response += "".join(token_to_string(model, token) for token in self.current_action.tokens)
+        self.response += "".join(self.current_action.token_map[token] for token in self.current_action.tokens)
         await self.set_action(Wait())
 
         return True

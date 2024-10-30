@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Awaitable, List, Dict
 
 from .beam import LlamaBeam
-from .actions import MatchPattern, FeedText, FeedTokens, Done, Wait, Completion
+from .actions import MatchPattern, FeedTokens, Done, Wait, Completion
 
 beam_idx = contextvars.ContextVar('Beam index of the active state function')
 
@@ -55,26 +55,26 @@ class LlamaRequest(object):
             "logit": action.current_match_logit,
         }
 
-    async def feed_text(self, text: str, calculate_likelihood: bool = False):
+    async def feed_tokens(self, tokens: List[int], top_p: int = 0):
         current_beam_idx = beam_idx.get()
-        action = FeedText(text, calculate_likelihood)
+        action = FeedTokens(tokens, top_p)
         await self.beams[current_beam_idx].set_action(action)
         await action.wait()
-        return action.likelihood
+        return {
+            "logits": action.logits,
+            "token_map": action.token_map,
+        }
 
-    async def feed_tokens(self, tokens: List[int], calculate_likelihood: bool = False):
+    async def completion(self, max_tokens: int, top_p: int = 0):
         current_beam_idx = beam_idx.get()
-        action = FeedTokens(tokens, calculate_likelihood)
+        action = Completion(max_tokens, top_p)
         await self.beams[current_beam_idx].set_action(action)
         await action.wait()
-        return action.likelihood
-
-    async def completion(self, max_tokens: int):
-        current_beam_idx = beam_idx.get()
-        action = Completion(max_tokens)
-        await self.beams[current_beam_idx].set_action(action)
-        await action.wait()
-        return action.response_text
+        return {
+            "logits": action.logits,
+            "token_map": action.token_map,
+            "text": action.response_text,
+        }
 
     async def fork(self, new_action_function: Callable[["LlamaRequest"], Awaitable[Any]], args: List[ForkArguments]):
         current_beam_idx = beam_idx.get()

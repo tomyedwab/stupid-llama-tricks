@@ -25,7 +25,8 @@ class TokenizeHandler(tornado.web.RequestHandler):
 class CompletionInput(BaseModel):
     operations: List[interpreter.Operation]
 
-class StreamingCompletionHandler(tornado.web.RequestHandler):
+# TODO: Add streaming support
+class CompletionHandler(tornado.web.RequestHandler):
     def __init__(self, *args, llama: Llama=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.llama = llama
@@ -39,7 +40,8 @@ class StreamingCompletionHandler(tornado.web.RequestHandler):
 def make_app(llama: Llama):
     return tornado.web.Application([
         (r"/tokenize", TokenizeHandler, {"llama": llama}),
-        (r"/streaming_completion", StreamingCompletionHandler, {"llama": llama}),
+        (r"/completion", CompletionHandler, {"llama": llama}),
+        (r"/(.*)", tornado.web.StaticFileHandler, {"path": "client", "default_filename": "index.html"}),
     ])
 
 async def server_main():
