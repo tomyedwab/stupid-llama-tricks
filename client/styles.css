@@ -8,7 +8,7 @@ body {
     flex-direction: row;
 }
 
-.conversation-block label {
+.conversation-block > label {
     flex: 1 0 0;
 }
 .conversation-block .column {
@@ -49,8 +49,8 @@ body {
 .word .word-popup {
     position: absolute;
     top: 32px;
-    left: calc(50% - 110px);
-    width: 220px;
+    left: calc(50% - 130px);
+    width: 260px;
     background-color: #fff;
     border: 1px solid #000;
     z-index: 100;
@@ -69,7 +69,7 @@ body {
 
     top: -8px;
 }
-.word:has(.word-popup.selected) {
+.word:has(.word-popup.selected) span {
     font-weight: bold;
 }
 
@@ -79,8 +79,52 @@ body {
     background-color: #fff;
 }
 .word .word-text {
-    width: 140px;
+    width: 180px;
 }
 .word tr.selected .word-text {
     font-weight: bold;
+}
+.word .word-input input {
+    width: 206px;
+}
+.word .word-input button {
+    background-color: #fcc;
+    border: 0;
+    border-radius: 8px;
+    padding: 4px 8px;
+    margin: 0 4px;
+}
+
+
+.word td.buttons {
+    text-align: center;
+}
+.word td.buttons button {
+    background-color: #ccf;
+    border: 0;
+    border-radius: 8px;
+    padding: 4px 12px;
+    margin: 0 8px;
+    
+    &:hover {
+        background-color: #aac;
+    }
+}
+
+.word-popup:not(.editing) .word-text input {
+    display: none;
+}
+.word-popup:not(.editing) .word-input {
+    display: none;
+}
+.word-popup:not(.editing) button.add,
+.word-popup:not(.editing) button.cancel,
+.word-popup:not(.editing) button.apply {
+    display: none;
+}
+.word-popup:not(.selected) button.edit {
+    display: none;
+}
+.word-popup.editing button.edit {
+    display: none;
 }
