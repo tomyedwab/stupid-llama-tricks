@@ -8,20 +8,31 @@
         <h1>stupid-llama-tricks demo</h1>
         <div class="conversation-block" id="system-prompt">
             <label for="system-prompt">System prompt</label>
-            <textarea></textarea>
-            <div class="result hidden">RESULTS</div>
-            <div class="indicator">...</div>
+            <div class="column">
+                <textarea></textarea>
+                <div class="indicator">...</div>
+            </div>
+            <div class="column">
+                <div class="result hidden"></div>
             </div>
         </div>
         <div class="conversation-block" id="user-prompt">
             <label for="user-prompt">User input</label>
-            <textarea></textarea>
-            <div class="result hidden">RESULTS</div>
-            <div class="indicator">...</div>
+            <div class="column">
+                <textarea></textarea>
+                <div class="indicator">...</div>
+            </div>
+            <div class="column">
+                <div class="result hidden"></div>
+            </div>
         </div>
         <div class="conversation-block" id="assistant-response">
             <label>Assistant response</label>
-            <div class="result hidden">RESULTS</div>
+            <div class="column">
+            </div>
+            <div class="column">
+                <div class="result hidden"></div>
+            </div>
         </div>
         <button id="submit">Submit</button>
     </body>

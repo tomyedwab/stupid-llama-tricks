@@ -1,8 +1,8 @@
 function debounce(fn, delay) {
     let timeout;
-    return () => {
+    return (...args) => {
         clearTimeout(timeout);
-        timeout = setTimeout(fn, delay);
+        timeout = setTimeout(() => fn(...args), delay);
     };
 }
 
@@ -10,6 +10,10 @@ class AppState {
     constructor(prompts, submitButton) {
         this.prompts = [];
         this.promptsByID = {};
+        this.logitScale = [0.0, 0.0];
+        this.hoverWord = null;
+        this.selectedWord = null;
+        this.wordPopup = null;
         for (const prompt of prompts) {
             this.addPrompt(prompt);
         }
@@ -18,6 +22,14 @@ class AppState {
             this.onSubmit();
         });
         this.onUpdateValid();
+
+        this.setHoverWord = debounce((word) => {
+            this.handleWordSelection(word, true);
+        }, 300);
+
+        document.body.addEventListener("click", () => {
+            this.handleWordSelection(null, false);
+        });
     }
 
     addPrompt(prompt) {
@@ -53,43 +65,112 @@ class AppState {
                     }
                 }
             }
+            this.logitScale = [min_logit, max_logit];
             for (const operation of data) {
                 const prompt = this.promptsByID[operation.id];
-                prompt.onResult(operation.result, min_logit, max_logit);
+                prompt.onResult(
+                    operation.result,
+                    min_logit,
+                    max_logit,
+                    (word, is_hover) => is_hover ? this.setHoverWord(word) : this.handleWordSelection(word, false));
             }
         });
+    }
+
+    handleWordSelection(word, is_hover) {
+        if (is_hover && this.selectedWord !== null) {
+            return;
+        }
+        if (word === null) {
+            this.hoverWord = null;
+            this.selectedWord = null;
+        } else if (is_hover) {
+            this.hoverWord = word;
+        } else {
+            this.selectedWord = word;
+        }
+
+        if (this.wordPopup !== null) {
+            this.wordPopup.remove();
+            this.wordPopup = null;
+        }
+
+        if (word !== null) {
+            this.wordPopup = document.createElement("div");
+            this.wordPopup.classList.add("word-popup");
+            this.wordPopup.innerHTML = word.getPopupHTML(this.logitScale[0], this.logitScale[1]);
+            word.element.appendChild(this.wordPopup);
+        }
     }
 }
 
 const COLORS = [
-    [246.7, 50.3, 100.0],
-    [257.9, 65.8, 94.7],
-    [212.0, 49.0, 82.6],
-    [159.3, 30.2, 87.2],
-    [37.8, 59.6, 94.1],
+    [246, 16, 24],
+    [258, 83, 50],
+    [212, 55, 60],
+    [92, 92, 70],
+    [5, 87, 94],
 ]
 
 function getColor(logit_value, min_logit, max_logit) {
-    const normalized_logit_value = (logit_value - min_logit) * (COLORS.length - 1) / (max_logit - min_logit);
+    const normalized_logit_value = (logit_value - max_logit) * (COLORS.length - 1) / (min_logit - max_logit);
     const color_idx = Math.min(COLORS.length - 2, Math.floor(normalized_logit_value));
     const color_frac = normalized_logit_value - color_idx;
-    const h = COLORS[color_idx][0] + color_frac * (COLORS[color_idx + 1][0] - COLORS[color_idx][0]);
-    const s = COLORS[color_idx][1] + color_frac * (COLORS[color_idx + 1][1] - COLORS[color_idx][1]);
-    const l = COLORS[color_idx][2] + color_frac * (COLORS[color_idx + 1][2] - COLORS[color_idx][2]);
+    const h = Math.round(COLORS[color_idx][0] + color_frac * (COLORS[color_idx + 1][0] - COLORS[color_idx][0]));
+    const s = Math.round(COLORS[color_idx][1] + color_frac * (COLORS[color_idx + 1][1] - COLORS[color_idx][1]));
+    const l = Math.round(COLORS[color_idx][2] + color_frac * (COLORS[color_idx + 1][2] - COLORS[color_idx][2]));
     return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
 class Word {
-    constructor(text, logit_value, min_logit, max_logit) {
+    constructor(text, logit_value, min_logit, max_logit, logits, token_map, callback) {
         this.text = text;
         this.logit_value = logit_value;
-        this.min_logit = min_logit;
-        this.max_logit = max_logit;
+        this.logits = logits;
+        this.token_map = token_map;
 
         const color = getColor(logit_value, min_logit, max_logit);
-        this.element = document.createElement("span");
+        this.element = document.createElement("div");
+        this.element.classList.add("word");
         this.element.textContent = text;
-        this.element.style.backgroundColor = color;
+        this.element.style.borderBottom = `2px solid ${color}`;
+        if (text.startsWith(" ")) {
+            this.element.style.marginLeft = "8px";
+        }
+        if (text.endsWith(" ")) {
+            this.element.style.marginRight = "8px";
+        }
+        this.element.addEventListener("mouseover", (evt) => {
+            callback(this, true);
+            evt.stopPropagation();
+        });
+        this.element.addEventListener("click", (evt) => {
+            callback(this, false);
+            evt.stopPropagation();
+        });
+    }
+
+    getPopupHTML(min_logit, max_logit) {
+        const rows = [];
+        const softmax = [];
+        // TODO: Make configurable?
+        const temperature = 10.0;
+        for (const logit of this.logits) {
+            softmax.push(Math.exp(logit[1] * 1.0 / temperature));
+        }
+        const max_softmax = softmax.reduce((a, b) => Math.max(a, b), 0);
+        for (let i = 0; i < softmax.length; i++) {
+            softmax[i] /= max_softmax;
+        }
+        for (let i = 0; i < this.logits.length; i++) {
+            const width = Math.max(1, Math.round(softmax[i] * 80));
+            rows.push(
+                `<tr>` + 
+                `<td class="word-bar"><div style="width: ${width}px; height: 100%; background-color: ${getColor(this.logits[i][1], min_logit, max_logit)}"></td>` + 
+                `<td class="word-text">${this.token_map[this.logits[i][0]]}</td>` +
+                `</tr>`);
+        }
+        return "<table>" + rows.join("") + "</table>";
     }
 }
 
@@ -128,7 +209,7 @@ class TextInput {
                 this.onUpdateValid();
                 this.indicator.classList.remove("loading");
                 this.indicator.classList.add("valid");
-                this.indicator.innerHTML = "&#10004;";
+                this.indicator.innerHTML = `&#10004; ${data.length} tokens`;
             });
     }
 
@@ -144,9 +225,7 @@ class TextInput {
         }
     }
 
-    onResult(result, min_logit, max_logit) {
-        this.inputElement.classList.add("hidden");
-        this.resultElement.classList.remove("hidden");
+    onResult(result, min_logit, max_logit, callback) {
         this.resultElement.innerHTML = "";
         for (let token_idx = 0; token_idx < result.logits.length; token_idx++) {
             let logit_value = 0.0;
@@ -156,7 +235,7 @@ class TextInput {
                 }
             });
             const text = result.token_map[this.tokens[token_idx]];
-            const word = new Word(text, logit_value, min_logit, max_logit);
+            const word = new Word(text, logit_value, min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
             this.resultElement.appendChild(word.element);
         }
     }
@@ -182,12 +261,11 @@ class AssistantResponse {
         }
     }
 
-    onResult(result, min_logit, max_logit) {
-        this.resultElement.classList.remove("hidden");
+    onResult(result, min_logit, max_logit, callback) {
         this.resultElement.innerHTML = "";
         for (let token_idx = 0; token_idx < result.logits.length; token_idx++) {
             const text = result.token_map[result.logits[token_idx][0][0]];
-            const word = new Word(text, result.logits[token_idx][0][1], min_logit, max_logit);
+            const word = new Word(text, result.logits[token_idx][0][1], min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
             this.resultElement.appendChild(word.element);
         }
     }

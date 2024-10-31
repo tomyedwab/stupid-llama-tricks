@@ -6,21 +6,27 @@ body {
 .conversation-block {
     display: flex;
     flex-direction: row;
-    position: relative;
 }
 
 .conversation-block label {
     flex: 1 0 0;
 }
-.conversation-block textarea,
-.conversation-block .result {
-    flex: 5 0 0;
+.conversation-block .column {
+    flex: 3 0 0;
+    position: relative;
 }
+
+.conversation-block .column textarea {
+    width: 100%;
+    height: 120px;
+}
+
 .conversation-block .indicator {
     display: none;
     position: absolute;
     right: 16px;
-    bottom: 0;
+    bottom: 4px;
+    font-size: 12px;
 }
 
 .conversation-block .indicator.loading {
@@ -33,6 +39,42 @@ body {
     color: #0f0;
 }
 
-.conversation-block .hidden {
-    display: none;
+.word {
+    padding: 0;
+    margin: 4px 2px;
+    display: inline-block;
+    position: relative;
+}
+
+.word .word-popup {
+    position: absolute;
+    top: 32px;
+    left: calc(50% - 110px);
+    width: 220px;
+    background-color: #fff;
+    border: 1px solid #000;
+    z-index: 100;
+}
+.word .word-popup:before{
+    content:'';
+    display:block;
+    width:0;
+    height:0;
+    position:absolute;
+
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-bottom: 8px solid black;
+    left: calc(50% - 4px);
+
+    top: -8px;
+}
+
+.word .word-bar {
+    width: 80px;
+    height: 20px;
+    background-color: #fff;
+}
+.word .word-text {
+    width: 140px;
 }

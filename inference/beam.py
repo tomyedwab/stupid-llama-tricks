@@ -98,8 +98,9 @@ class LlamaBeam(object):
                     (tkn.id, tkn.logit)
                     for tkn in candidates_p.contents.data[:self.current_action.top_p]
                 ])
-                if selected_token not in self.current_action.token_map:
-                    self.current_action.token_map[selected_token] = token_to_string(model, selected_token)
+                for tkn in candidates_p.contents.data[:self.current_action.top_p]:
+                    if tkn.id not in self.current_action.token_map:
+                        self.current_action.token_map[tkn.id] = token_to_string(model, tkn.id)
 
         else:
             return None
