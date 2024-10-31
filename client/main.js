@@ -99,6 +99,9 @@ class AppState {
             this.wordPopup = document.createElement("div");
             this.wordPopup.classList.add("word-popup");
             this.wordPopup.innerHTML = word.getPopupHTML(this.logitScale[0], this.logitScale[1]);
+            if (this.selectedWord === word) {
+                this.wordPopup.classList.add("selected");
+            }
             word.element.appendChild(this.wordPopup);
         }
     }
@@ -123,8 +126,9 @@ function getColor(logit_value, min_logit, max_logit) {
 }
 
 class Word {
-    constructor(text, logit_value, min_logit, max_logit, logits, token_map, callback) {
+    constructor(text, token, logit_value, min_logit, max_logit, logits, token_map, callback) {
         this.text = text;
+        this.token = token;
         this.logit_value = logit_value;
         this.logits = logits;
         this.token_map = token_map;
@@ -132,13 +136,13 @@ class Word {
         const color = getColor(logit_value, min_logit, max_logit);
         this.element = document.createElement("div");
         this.element.classList.add("word");
-        this.element.textContent = text;
+        this.element.innerHTML = text.replaceAll(" ", "&nbsp;");
         this.element.style.borderBottom = `2px solid ${color}`;
         if (text.startsWith(" ")) {
-            this.element.style.marginLeft = "8px";
+            this.element.style.paddingLeft = "8px";
         }
         if (text.endsWith(" ")) {
-            this.element.style.marginRight = "8px";
+            this.element.style.paddingRight = "8px";
         }
         this.element.addEventListener("mouseover", (evt) => {
             callback(this, true);
@@ -165,7 +169,7 @@ class Word {
         for (let i = 0; i < this.logits.length; i++) {
             const width = Math.max(1, Math.round(softmax[i] * 80));
             rows.push(
-                `<tr>` + 
+                (this.logits[i][0] === this.token ? `<tr class="selected">` : `<tr>`) + 
                 `<td class="word-bar"><div style="width: ${width}px; height: 100%; background-color: ${getColor(this.logits[i][1], min_logit, max_logit)}"></td>` + 
                 `<td class="word-text">${this.token_map[this.logits[i][0]]}</td>` +
                 `</tr>`);
@@ -235,7 +239,7 @@ class TextInput {
                 }
             });
             const text = result.token_map[this.tokens[token_idx]];
-            const word = new Word(text, logit_value, min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
+            const word = new Word(text, this.tokens[token_idx], logit_value, min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
             this.resultElement.appendChild(word.element);
         }
     }
@@ -265,7 +269,7 @@ class AssistantResponse {
         this.resultElement.innerHTML = "";
         for (let token_idx = 0; token_idx < result.logits.length; token_idx++) {
             const text = result.token_map[result.logits[token_idx][0][0]];
-            const word = new Word(text, result.logits[token_idx][0][1], min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
+            const word = new Word(text, result.logits[token_idx][0][0], result.logits[token_idx][0][1], min_logit, max_logit, result.logits[token_idx], result.token_map, callback);
             this.resultElement.appendChild(word.element);
         }
     }

@@ -36,7 +36,7 @@ body {
 
 .conversation-block .indicator.valid {
     display: block;
-    color: #0f0;
+    color: #129312;
 }
 
 .word {
@@ -69,6 +69,9 @@ body {
 
     top: -8px;
 }
+.word:has(.word-popup.selected) {
+    font-weight: bold;
+}
 
 .word .word-bar {
     width: 80px;
@@ -77,4 +80,7 @@ body {
 }
 .word .word-text {
     width: 140px;
+}
+.word tr.selected .word-text {
+    font-weight: bold;
 }
