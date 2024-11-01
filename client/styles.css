@@ -1,42 +1,72 @@
 body {
     display: flex;
     flex-direction: column;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+h2 {
+    display: inline-block;
+    font-size: 18px;
 }
 
 .conversation-block {
-    display: flex;
-    flex-direction: row;
-}
+    padding-right: 500px;
 
-.conversation-block > label {
-    flex: 1 0 0;
-}
-.conversation-block .column {
-    flex: 3 0 0;
-    position: relative;
-}
+    & > details {
+        position: relative;
 
-.conversation-block .column textarea {
-    width: 100%;
-    height: 120px;
-}
+        & .instructions {
+            box-sizing: border-box;
+            position: absolute;
+            right: -500px;
+            top: 18px;
+            max-width: 500px;
+            padding: 16px;
+        }
 
-.conversation-block .indicator {
-    display: none;
-    position: absolute;
-    right: 16px;
-    bottom: 4px;
-    font-size: 12px;
-}
+        & textarea {
+            box-sizing: border-box;
+            width: 100%;
+            height: 120px;
+        }
+    }
 
-.conversation-block .indicator.loading {
-    display: block;
-    color: #999;
-}
+    & > details .parameter {
+        display: none;
+        font-size: 12px;
+        background-color: #eee;
+        padding: 2px 0 2px 8px;
+        border-radius: 12px;
+        
+        & span:nth-child(2) {
+            background-color: #dfd;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+    }
+    & > details:not([open]) .parameter {
+        display: inline-block;
+    }
 
-.conversation-block .indicator.valid {
-    display: block;
-    color: #129312;
+    & .indicator {
+        display: none;
+        position: absolute;
+        right: 16px;
+        bottom: 4px;
+        font-size: 12px;
+
+        &.loading {
+            display: block;
+            color: #999;
+        }
+
+        &.valid {
+            display: block;
+            color: #129312;
+        }
+    }
+
 }
 
 .word {
@@ -44,87 +74,90 @@ body {
     margin: 4px 2px;
     display: inline-block;
     position: relative;
-}
 
-.word .word-popup {
-    position: absolute;
-    top: 32px;
-    left: calc(50% - 130px);
-    width: 260px;
-    background-color: #fff;
-    border: 1px solid #000;
-    z-index: 100;
-}
-.word .word-popup:before{
-    content:'';
-    display:block;
-    width:0;
-    height:0;
-    position:absolute;
-
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-bottom: 8px solid black;
-    left: calc(50% - 4px);
-
-    top: -8px;
-}
-.word:has(.word-popup.selected) span {
-    font-weight: bold;
-}
-
-.word .word-bar {
-    width: 80px;
-    height: 20px;
-    background-color: #fff;
-}
-.word .word-text {
-    width: 180px;
-}
-.word tr.selected .word-text {
-    font-weight: bold;
-}
-.word .word-input input {
-    width: 206px;
-}
-.word .word-input button {
-    background-color: #fcc;
-    border: 0;
-    border-radius: 8px;
-    padding: 4px 8px;
-    margin: 0 4px;
-}
-
-
-.word td.buttons {
-    text-align: center;
-}
-.word td.buttons button {
-    background-color: #ccf;
-    border: 0;
-    border-radius: 8px;
-    padding: 4px 12px;
-    margin: 0 8px;
-    
-    &:hover {
-        background-color: #aac;
+    &:has(.word-popup.selected) span {
+        font-weight: bold;
     }
-}
 
-.word-popup:not(.editing) .word-text input {
-    display: none;
-}
-.word-popup:not(.editing) .word-input {
-    display: none;
-}
-.word-popup:not(.editing) button.add,
-.word-popup:not(.editing) button.cancel,
-.word-popup:not(.editing) button.apply {
-    display: none;
-}
-.word-popup:not(.selected) button.edit {
-    display: none;
-}
-.word-popup.editing button.edit {
-    display: none;
+    & .word-popup {
+        position: absolute;
+        top: 32px;
+        left: calc(50% - 130px);
+        width: 260px;
+        background-color: #fff;
+        border: 1px solid #000;
+        z-index: 100;
+
+        &:before {
+            content:'';
+            display:block;
+            width:0;
+            height:0;
+            position:absolute;
+
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 8px solid black;
+            left: calc(50% - 4px);
+
+            top: -8px;
+        }
+
+        &:not(.editing) {
+            & .word-text input {
+                display: none;
+            }
+            & .word-input {
+                display: none;
+            }
+            & button.add,
+            & button.cancel,
+            & button.apply {
+                display: none;
+            }
+        }
+        &:not(.selected) button.edit {
+            display: none;
+        }
+        &.editing button.edit {
+            display: none;
+        }
+    }
+
+    & .word-bar {
+        width: 80px;
+        height: 20px;
+        background-color: #fff;
+    }
+    & .word-text {
+        width: 180px;
+    }
+    & tr.selected .word-text {
+        font-weight: bold;
+    }
+    & .word-input input {
+        width: 206px;
+    }
+    & .word-input button {
+        background-color: #fcc;
+        border: 0;
+        border-radius: 8px;
+        padding: 4px 8px;
+        margin: 0 4px;
+    }
+
+    & td.buttons {
+        text-align: center;
+    }
+    & td.buttons button {
+        background-color: #ccf;
+        border: 0;
+        border-radius: 8px;
+        padding: 4px 12px;
+        margin: 0 8px;
+        
+        &:hover {
+            background-color: #aac;
+        }
+    }
 }

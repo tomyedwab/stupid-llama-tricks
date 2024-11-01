@@ -244,9 +244,27 @@ class Word {
     }
 }
 
+class Parameter {
+    constructor(id, inputElement, parameterElement) {
+        this.id = id;
+        this.inputElement = inputElement;
+        this.value = this.inputElement.value;
+
+        this.inputElement.addEventListener("input", () => {
+            this.value = this.inputElement.value;
+            this.parameterElement.querySelector("span:nth-child(2)").textContent = this.value;
+        });
+
+        this.parameterElement = parameterElement;
+        this.parameterElement.querySelector("span:nth-child(2)").textContent = this.value;
+
+    }
+}
+
 class TextInput {
     constructor(id, element, role) {
         this.id = id;
+        this.detailsElement = element.querySelector("details");
         this.inputElement = element.querySelector("textarea");
         this.resultElement = element.querySelector(".result");
         this.indicator = element.querySelector(".indicator");
@@ -284,7 +302,7 @@ class TextInput {
     }
 
     onSubmit() {
-        this.inputElement.disabled = true;
+        this.detailsElement.open = false;
         return {
             id: this.id,
             name: "feed_tokens",
@@ -314,18 +332,23 @@ class TextInput {
 class AssistantResponse {
     constructor(id, element) {
         this.id = id;
+        this.detailsElement = element.querySelector("details");
         this.onUpdateValid = () => {};
         this.valid = true;
         this.resultElement = element.querySelector(".result");
+        this.parameters = {
+            "maxTokens": new Parameter("maxTokens", this.detailsElement.querySelector("input[data-id=maxTokens]"), this.detailsElement.querySelector(".parameter[data-id=maxTokens]")),
+        }
     }
 
     onSubmit() {
+        this.detailsElement.open = false;
+        const maxTokens = this.parameters["maxTokens"].value;
         return {
             id: this.id,
             name: "completion",
             completion: {
-                // TODO: Add configuration option
-                max_tokens: 1000,
+                max_tokens: maxTokens,
                 top_p: 10,
             },
         }

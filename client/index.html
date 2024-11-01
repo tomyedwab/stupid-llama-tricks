@@ -8,33 +8,69 @@
     </head>
     <body>
         <h1>stupid-llama-tricks demo</h1>
+        <div class="conversation-block" id="model-selection">
+            <details open>
+                <summary>
+                    <h2>Model</h2>
+                </summary>
+                <div class="instructions">
+                    <p>
+                        The model determines the AI's capabilities and behavior:
+                        It contains the architecture and trained weights of the
+                        neural network.
+                    </p>
+                </div>
+                <div>TODO: Add model selection</div>
+            </details>
+            <div class="result"></div>
+        </div>
         <div class="conversation-block" id="system-prompt">
-            <label for="system-prompt">System prompt</label>
-            <div class="column">
+            <details open>
+                <summary>
+                    <h2>System prompt</h2>
+                </summary>
+                <div class="instructions">
+                    <p>
+                        A system prompt is used to guide the AI's behavior, and
+                        is intended to contain general instructions for the AI.
+                    </p>
+                </div>
                 <textarea></textarea>
                 <div class="indicator">...</div>
-            </div>
-            <div class="column">
-                <div class="result hidden"></div>
-            </div>
+            </details>
+            <div class="result"></div>
         </div>
         <div class="conversation-block" id="user-prompt">
-            <label for="user-prompt">User input</label>
-            <div class="column">
+            <details open>
+                <summary>
+                    <h2>User input</h2>
+                </summary>
+                <div class="instructions">
+                    <p>
+                        A user prompt represents the user's input to the AI,
+                        often a question or a request.
+                    </p>
+                </div>
                 <textarea></textarea>
                 <div class="indicator">...</div>
-            </div>
-            <div class="column">
-                <div class="result hidden"></div>
-            </div>
+            </details>
+            <div class="result"></div>
         </div>
         <div class="conversation-block" id="assistant-response">
-            <label>Assistant response</label>
-            <div class="column">
-            </div>
-            <div class="column">
-                <div class="result hidden"></div>
-            </div>
+            <details open>
+                <summary>
+                    <h2>Completion</h2>
+                    <div class="parameter" data-id="maxTokens">
+                        <span>Max tokens</span>
+                        <span>300</span>
+                    </div>
+                </summary>
+                <label>
+                    Max tokens:
+                    <input data-id="maxTokens" type="number" value="300">
+                </label>
+            </details>
+            <div class="result"></div>
         </div>
         <button id="submit">Submit</button>
     </body>
