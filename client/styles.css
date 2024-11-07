@@ -1,8 +1,13 @@
+html {
+    height: 100%;
+}
+
 body {
     display: flex;
     flex-direction: column;
     max-width: 1000px;
     margin: 0 auto;
+    height: 100%;
 }
 
 h2 {
@@ -47,6 +52,41 @@ h2 {
     }
     & > details:not([open]) .parameter {
         display: inline-block;
+    }
+    &:not(:has(.parameters .row-type.radio-group input[value="text"]:checked)) .type-parameters[data-type="text"],
+    &:not(:has(.parameters .row-type.radio-group input[value="text"]:checked)) .parameter[data-type="text"] {
+        display: none;
+    }
+    &:not(:has(.parameters .row-type.radio-group input[value="completion"]:checked)) .type-parameters[data-type="completion"],
+    &:not(:has(.parameters .row-type.radio-group input[value="completion"]:checked)) .parameter[data-type="completion"] {
+        display: none;
+    }
+    &:not(:has(.parameters .row-type.radio-group input[value="branch"]:checked)) .type-parameters[data-type="branch"],
+    &:not(:has(.parameters .row-type.radio-group input[value="branch"]:checked)) .parameter[data-type="branch"] {
+        display: none;
+    }
+
+    & .parameters {
+        display: grid;
+        grid-template-columns: 50px auto;
+        grid-template-rows: 1fr 1fr auto;
+
+        & .row-role {
+            grid-row: 1 / 2;
+        }
+        & .row-type {
+            grid-row: 2 / 3;
+        }
+        & label {
+            grid-column: 1 / 2;
+        }
+        & .radio-group {
+            grid-column: 2 / 3;
+        }
+        & .type-parameters {
+            grid-column: 1 / 3;
+            grid-row: 3 / 4;
+        }
     }
 
     & .indicator {
@@ -116,7 +156,7 @@ h2 {
                 display: none;
             }
         }
-        &:not(.selected) button.edit {
+        &:not(.editable) button.edit {
             display: none;
         }
         &.editing button.edit {
@@ -150,6 +190,23 @@ h2 {
         text-align: center;
     }
     & td.buttons button {
+        background-color: #ccf;
+        border: 0;
+        border-radius: 8px;
+        padding: 4px 12px;
+        margin: 0 8px;
+        
+        &:hover {
+            background-color: #aac;
+        }
+    }
+}
+
+.action-bar {
+    width: 100%;
+    text-align: center;
+
+    & button {
         background-color: #ccf;
         border: 0;
         border-radius: 8px;

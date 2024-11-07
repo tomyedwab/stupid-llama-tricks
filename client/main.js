@@ -7,9 +7,9 @@ function debounce(fn, delay) {
 }
 
 class AppState {
-    constructor(prompts, submitButton) {
-        this.prompts = [];
-        this.promptsByID = {};
+    constructor(blocks, submitButton) {
+        this.blocks = [];
+        this.blocksByID = {};
         this.logitScale = [0.0, 0.0];
         this.hoverWord = null;
         this.selectedWord = null;
@@ -17,8 +17,8 @@ class AppState {
         this.editingPopup = false;
         this.selectedTokens = {};
         this.customTexts = [];
-        for (const prompt of prompts) {
-            this.addPrompt(prompt);
+        for (const block of blocks) {
+            this.addBlock(block);
         }
         this.submitButton = submitButton;
         this.submitButton.addEventListener("click", () => {
@@ -35,22 +35,23 @@ class AppState {
         });
     }
 
-    addPrompt(prompt) {
-        prompt.onUpdateValid = () => {
+    addBlock(block) {
+        block.onUpdateValid = () => {
             this.onUpdateValid();
         };
-        this.prompts.push(prompt);
-        this.promptsByID[prompt.id] = prompt;
+        this.blocks.push(block);
+        this.blocksByID[block.id] = block;
     }
 
     onUpdateValid() {
-        this.submitButton.disabled = !this.prompts.every(prompt => prompt.valid);
+        this.submitButton.disabled = !this.blocks.every(block => block.valid);
     }
 
     onSubmit() {
         let operations = [];
-        for (const prompt of this.prompts) {
-            operations.push(prompt.onSubmit());
+        for (const block of this.blocks) {
+            operations.push(block.onSubmit());
+            block.onClearResult();
         }
         fetch("/completion", {
             method: "POST",
@@ -70,8 +71,8 @@ class AppState {
             }
             this.logitScale = [minLogit, maxLogit];
             for (const operation of data) {
-                const prompt = this.promptsByID[operation.id];
-                prompt.onResult(
+                const block = this.blocksByID[operation.id];
+                block.onResult(
                     operation.result,
                     minLogit,
                     maxLogit,
@@ -111,15 +112,24 @@ class AppState {
                 this.renderPopup();
             });
         });
-        this.wordPopup.querySelector("button.edit").addEventListener("click", () => {
-            this.editingPopup = true;
-            this.renderPopup();
-        });
+        if (word.isEditable) {
+            this.wordPopup.classList.add("editable");
+            this.wordPopup.querySelector("button.edit").addEventListener("click", () => {
+                this.editingPopup = true;
+                this.renderPopup();
+            });
+        } else {
+            this.wordPopup.classList.remove("editable");
+        }
         this.wordPopup.querySelector("button.cancel").addEventListener("click", () => {
             this.editingPopup = false;
             this.selectedTokens = {};
             this.customTexts = [];
             this.renderPopup();
+        });
+        this.wordPopup.querySelector("button.apply").addEventListener("click", () => {
+            word.block.applyCustomTexts(word.index, this.selectedTokens, this.customTexts);
+            this.onSubmit();
         });
     }
 
@@ -182,12 +192,15 @@ function getColor(logitValue, minLogit, maxLogit) {
 }
 
 class Word {
-    constructor(text, token, logitValue, minLogit, maxLogit, logits, tokenMap, callback) {
+    constructor(block, index, text, token, logitValue, minLogit, maxLogit, logits, tokenMap, isEditable, callback) {
+        this.block = block;
+        this.index = index;
         this.text = text;
         this.token = token;
         this.logitValue = logitValue;
         this.logits = logits;
         this.tokenMap = tokenMap;
+        this.isEditable = isEditable;
 
         const color = getColor(logitValue, minLogit, maxLogit);
         this.element = document.createElement("div");
@@ -261,29 +274,72 @@ class Parameter {
     }
 }
 
-class TextInput {
-    constructor(id, element, role) {
+const TYPE_LABELS = {
+    "text": "Text",
+    "completion": "Completion",
+    "branch": "Branch",
+};
+
+class ConversationBlock extends HTMLDivElement {
+    constructor(id, defaultRole, defaultType) {
+        super();
         this.id = id;
-        this.detailsElement = element.querySelector("details");
-        this.inputElement = element.querySelector("textarea");
-        this.resultElement = element.querySelector(".result");
-        this.indicator = element.querySelector(".indicator");
-        this.role = role;
-        this.valid = false;
-        this.tokens = [];
-        this.onUpdateValid = () => {};
-        this.inputElement.addEventListener("input", debounce(() => {
-            this.onInput(this.inputElement.value);
-        }, 300));
-        if (this.inputElement.value !== "") {
-            this.onInput(this.inputElement.value);
+        this.role = defaultRole;
+        this.type = defaultType;
+        this.parameters = {
+            "text": {
+                "raw": "",
+                "tokenized": [],
+            },
+            "completion": {
+                "maxTokens": 300,
+            },
         }
+        this.cachedLogits = null;
+
+        this.onUpdateValid = () => {};
+        this.checkValid();
+
+        this.classList.add("conversation-block");
+        let templateContent = document.getElementById("conversation-block").content;
+        this.appendChild(templateContent.cloneNode(true));
+
+        this.querySelector("input[name=role][value=" + defaultRole + "]").checked = true;
+        this.querySelector("input[name=type][value=" + defaultType + "]").checked = true;
+
+        const textInput = this.querySelector("textarea");
+        textInput.addEventListener("input", debounce(() => {
+            this.onTextInput(textInput.value);
+        }, 300));
+
+        this.querySelectorAll("input[name=role]").forEach(input => {
+            input.addEventListener("change", () => {
+                this.role = input.value;
+                this.updateSummary();
+            });
+        });
+        this.querySelectorAll("input[name=type]").forEach(input => {
+            input.addEventListener("change", () => {
+                this.type = input.value;
+                this.updateSummary();
+            });
+        });
+        this.querySelector("input[name=maxTokens]").addEventListener("change", () => {
+            this.parameters["completion"]["maxTokens"] = parseInt(this.querySelector("input[name=maxTokens]").value);
+            this.querySelector("div.parameter[data-type=completion] span:nth-child(2)").textContent = this.parameters["completion"]["maxTokens"];
+            this.updateSummary();
+        });
+
+        this.updateSummary();
     }
 
-    onInput(value) {
+    onTextInput(value) {
+        this.parameters["text"]["raw"] = value;
+
         // Send a request to the server to tokenize the input
-        this.indicator.classList.add("loading");
-        this.indicator.textContent = "...";
+        const indicator = this.querySelector(".indicator");
+        indicator.classList.add("loading");
+        indicator.textContent = "...";
 
         const formattedText = `<|${this.role}|>\n${value}<|end|>\n`;
         fetch("/tokenize", {
@@ -292,82 +348,100 @@ class TextInput {
         })
             .then(response => response.json())
             .then(data => {
-                this.tokens = data;
-                this.valid = data.length > 0;
-                this.onUpdateValid();
-                this.indicator.classList.remove("loading");
-                this.indicator.classList.add("valid");
-                this.indicator.innerHTML = `&#10004; ${data.length} tokens`;
+                this.parameters["text"]["tokenized"] = data;
+                this.checkValid();
+                indicator.classList.remove("loading");
+                indicator.classList.add("valid");
+                indicator.innerHTML = `&#10004; ${data.length} tokens`;
             });
     }
 
-    onSubmit() {
-        this.detailsElement.open = false;
-        return {
-            id: this.id,
-            name: "feed_tokens",
-            feed_tokens: {
-                tokens: this.tokens,
-                top_p: 10,
-            },
-        }
+    updateSummary() {
+        this.querySelector("summary h2").textContent = `${TYPE_LABELS[this.type]} (${this.role})`;
     }
 
-    onResult(result, minLogit, maxLogit, callback) {
-        this.resultElement.innerHTML = "";
-        for (let tokenIdx = 0; tokenIdx < result.logits.length; tokenIdx++) {
-            let logitValue = 0.0;
-            result.logits[tokenIdx].forEach(logit => {
-                if (logit[0] === this.tokens[tokenIdx]) {
-                    logitValue = logit[1];
-                }
-            });
-            const text = result.token_map[this.tokens[tokenIdx]];
-            const word = new Word(text, this.tokens[tokenIdx], logitValue, minLogit, maxLogit, result.logits[tokenIdx], result.token_map, callback);
-            this.resultElement.appendChild(word.element);
+    checkValid() {
+        if (this.type === "text") {
+            this.valid = this.parameters["text"]["tokenized"].length > 0;
+        } else if (this.type === "completion") {
+            this.valid = true;
         }
-    }
-}
-
-class AssistantResponse {
-    constructor(id, element) {
-        this.id = id;
-        this.detailsElement = element.querySelector("details");
-        this.onUpdateValid = () => {};
-        this.valid = true;
-        this.resultElement = element.querySelector(".result");
-        this.parameters = {
-            "maxTokens": new Parameter("maxTokens", this.detailsElement.querySelector("input[data-id=maxTokens]"), this.detailsElement.querySelector(".parameter[data-id=maxTokens]")),
-        }
+        this.onUpdateValid();
     }
 
     onSubmit() {
-        this.detailsElement.open = false;
-        const maxTokens = this.parameters["maxTokens"].value;
-        return {
-            id: this.id,
-            name: "completion",
-            completion: {
-                max_tokens: maxTokens,
-                top_p: 10,
-            },
+        if (!this.valid) {
+            return null;
+        }
+        const detailsElement = this.querySelector("details");
+        detailsElement.open = false;
+        if (this.type === "text") {
+            return {
+                id: this.id,
+                name: "feed_tokens",
+                feed_tokens: {
+                    tokens: this.parameters["text"]["tokenized"],
+                    top_p: 10,
+                },
+            };
+        } else if (this.type === "completion") {
+            return {
+                id: this.id,
+                name: "completion",
+                completion: {
+                    max_tokens: this.parameters["completion"]["maxTokens"],
+                    top_p: 10,
+                },
+            };
         }
     }
 
+    onClearResult() {
+        const resultElement = this.querySelector(".result");
+        resultElement.innerHTML = "";
+        this.cachedLogits = null;
+    }
+
     onResult(result, minLogit, maxLogit, callback) {
-        this.resultElement.innerHTML = "";
+        this.cachedLogits = result.logits;
+
+        const resultElement = this.querySelector(".result");
+        resultElement.innerHTML = "";
+
         for (let tokenIdx = 0; tokenIdx < result.logits.length; tokenIdx++) {
-            const text = result.token_map[result.logits[tokenIdx][0][0]];
-            const word = new Word(text, result.logits[tokenIdx][0][0], result.logits[tokenIdx][0][1], minLogit, maxLogit, result.logits[tokenIdx], result.token_map, callback);
-            this.resultElement.appendChild(word.element);
+            if (this.type === "text") {
+                let logitValue = 0.0;
+                result.logits[tokenIdx].forEach(logit => {
+                    if (logit[0] === this.parameters["text"]["tokenized"][tokenIdx]) {
+                        logitValue = logit[1];
+                    }
+                });
+                const text = result.token_map[this.parameters["text"]["tokenized"][tokenIdx]];
+                const word = new Word(this, tokenIdx, text, this.parameters["text"]["tokenized"][tokenIdx], logitValue, minLogit, maxLogit, result.logits[tokenIdx], result.token_map, false, callback);
+                resultElement.appendChild(word.element);
+            } else if (this.type === "completion") {
+                const text = result.token_map[result.logits[tokenIdx][0][0]];
+                const word = new Word(this, tokenIdx, text, result.logits[tokenIdx][0][0], result.logits[tokenIdx][0][1], minLogit, maxLogit, result.logits[tokenIdx], result.token_map, true, callback);
+                resultElement.appendChild(word.element);
+            }
         }
     }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    const systemPrompt = new TextInput("system-prompt", document.getElementById("system-prompt"), "system");
-    const userPrompt = new TextInput("user-prompt", document.getElementById("user-prompt"), "user");
-    const assistantResponse = new AssistantResponse("assistant-response", document.getElementById("assistant-response"));
+    customElements.define("conversation-block", ConversationBlock, { extends: "div" });
+
+    const blocks = document.getElementById("conversation-blocks");
+
+    const systemPrompt = new ConversationBlock("system-prompt", "system", "text");
+    blocks.appendChild(systemPrompt);
+
+    const userPrompt = new ConversationBlock("user-prompt", "user", "text");
+    blocks.appendChild(userPrompt);
+
+    const assistantResponse = new ConversationBlock("assistant-response", "assistant", "completion");
+    blocks.appendChild(assistantResponse);
+
     const submitButton = document.getElementById("submit");
     const appState = new AppState([systemPrompt, userPrompt, assistantResponse], submitButton);
 });

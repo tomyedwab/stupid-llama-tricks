@@ -55,7 +55,7 @@ async def server_main():
     )
     llama = Llama(config)
     app = make_app(llama)
-    app.listen(8888)
+    app.listen(port=8888, address="0.0.0.0")
     await asyncio.gather(*[
         llama.run(),
         asyncio.Event().wait(),
