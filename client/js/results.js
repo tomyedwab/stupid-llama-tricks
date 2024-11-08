@@ -136,6 +136,11 @@ class Results extends HTMLDivElement {
                 }
 
             } else {
+                const blockLabel = document.createElement("div");
+                blockLabel.classList.add("block-label");
+                blockLabel.textContent = '#' + operation.id;
+                this.appendChild(blockLabel);
+
                 for (const token of Object.keys(operation.result.token_map)) {
                     this.tokenMap[token] = operation.result.token_map[token];
                 }
@@ -149,11 +154,23 @@ class Results extends HTMLDivElement {
                         });
                         const text = operation.result.token_map[operation.feed_tokens.tokens[tokenIdx]];
                         const word = new Word(tokenIdx, text, operation.feed_tokens.tokens[tokenIdx], logitValue, minLogit, maxLogit, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
+                        if (text.startsWith("\n")) {
+                            this.appendChild(document.createElement("br"));
+                        }
                         this.appendChild(word);
+                        if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                            this.appendChild(document.createElement("br"));
+                        }
                     } else if (operation.name === "completion") {
                         const text = operation.result.token_map[operation.result.logits[tokenIdx][0][0]];
                         const word = new Word(tokenIdx, text, operation.result.logits[tokenIdx][0][0], operation.result.logits[tokenIdx][0][1], minLogit, maxLogit, operation.result.logits[tokenIdx], operation.result.token_map, true, callback);
+                        if (text.startsWith("\n")) {
+                            this.appendChild(document.createElement("br"));
+                        }
                         this.appendChild(word);
+                        if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                            this.appendChild(document.createElement("br"));
+                        }
                     } 
                 }
             }

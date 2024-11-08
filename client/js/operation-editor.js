@@ -35,7 +35,7 @@ class OperationEditor extends HTMLDivElement {
 
     setId(id) {
         this.id = id;
-        this.querySelector("label.index").textContent = id;
+        this.querySelector("label.index").textContent = '#' + id;
     }
 
     setRole(role) {
@@ -108,7 +108,7 @@ class OperationEditorText extends OperationEditor {
             return null;
         }
         return {
-            id: `feed_tokens:${this.id}`,
+            id: `${this.id}`,
             name: "feed_tokens",
             feed_tokens: {
                 tokens: this.parameters["tokenized"],
@@ -142,7 +142,7 @@ class OperationEditorCompletion extends OperationEditor {
             return null;
         }
         return {
-            id: `completion:${this.id}`,
+            id: `${this.id}`,
             name: "completion",
             completion: {
                 max_tokens: this.parameters["maxTokens"],
@@ -183,7 +183,7 @@ class OperationEditorBranch extends OperationEditor {
         for (let idx = 0; idx < this.parameters["options"].length; idx++) {
             forks.push([
                 {
-                    id: `branch:${this.id}:feed-tokens:${idx}`,
+                    id: `${this.id}:${idx}`,
                     name: "feed_tokens",
                     feed_tokens: {
                         tokens: this.parameters["options"][idx]["tokenized"],
@@ -193,7 +193,7 @@ class OperationEditorBranch extends OperationEditor {
             ]);
         }
         return {
-            id: `branch:${this.id}`,
+            id: `${this.id}`,
             name: "branch",
             branch: {
                 forks,

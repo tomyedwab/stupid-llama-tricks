@@ -14,79 +14,72 @@
 
         <template id="operation-editor-text">
             <label class="index"></label>
-            <h2>Text input</h2>
-            <div class="instructions">
-                <p>TODO: Context-specific instructions here</p>
-            </div>
-            <form class="parameters">
-                <label class="row-role">Role</label>
-                <div class="row-role radio-group">
-                    <label><input type="radio" name="role" value="system">System</label>
-                    <label><input type="radio" name="role" value="user">User</label>
-                    <label><input type="radio" name="role" value="assistant">Assistant</label>
-                </div>
-                <div class="type-parameters">
-                    <div class="text-input-wrapper">
-                        <textarea></textarea>
-                        <div class="indicator">...</div>
+            <div class="body">
+                <h2>Text input</h2>
+                <form class="parameters">
+                    <label class="row-role">Role</label>
+                    <div class="row-role radio-group">
+                        <label><input type="radio" name="role" value="system">System</label>
+                        <label><input type="radio" name="role" value="user">User</label>
+                        <label><input type="radio" name="role" value="assistant">Assistant</label>
                     </div>
-                </div>
-            </form>
+                    <div class="type-parameters">
+                        <div class="text-input-wrapper">
+                            <textarea></textarea>
+                            <div class="indicator">...</div>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </template>
 
         <template id="operation-editor-completion">
             <label class="index"></label>
-            <h2>LLM completion</h2>
-            <div class="instructions">
-                <p>TODO: Context-specific instructions here</p>
+            <div class="body">
+                <h2>LLM completion</h2>
+                <form class="parameters">
+                    <label class="row-role">Role</label>
+                    <div class="row-role radio-group">
+                        <label><input type="radio" name="role" value="system">System</label>
+                        <label><input type="radio" name="role" value="user">User</label>
+                        <label><input type="radio" name="role" value="assistant">Assistant</label>
+                    </div>
+                    <div class="type-parameters">
+                        <label>
+                            Max tokens:
+                            <input name="maxTokens" type="number" value="300">
+                        </label>
+                    </div>
+                </form>
             </div>
-            <form class="parameters">
-                <label class="row-role">Role</label>
-                <div class="row-role radio-group">
-                    <label><input type="radio" name="role" value="system">System</label>
-                    <label><input type="radio" name="role" value="user">User</label>
-                    <label><input type="radio" name="role" value="assistant">Assistant</label>
-                </div>
-                <div class="type-parameters">
-                    <label>
-                        Max tokens:
-                        <input name="maxTokens" type="number" value="300">
-                    </label>
-                </div>
-            </form>
         </template>
 
         <template id="operation-editor-branch">
             <label class="index"></label>
-            <h2>Branch</h2>
-            <div class="instructions">
-                <p>TODO: Context-specific instructions here</p>
+            <div class="body">
+                <h2>Branch</h2>
+                <form class="parameters">
+                    <label class="row-role">Role</label>
+                    <div class="row-role radio-group">
+                        <label><input type="radio" name="role" value="system">System</label>
+                        <label><input type="radio" name="role" value="user">User</label>
+                        <label><input type="radio" name="role" value="assistant">Assistant</label>
+                    </div>
+                    <div class="type-parameters">
+                    </div>
+                </form>
             </div>
-            <form class="parameters">
-                <label class="row-role">Role</label>
-                <div class="row-role radio-group">
-                    <label><input type="radio" name="role" value="system">System</label>
-                    <label><input type="radio" name="role" value="user">User</label>
-                    <label><input type="radio" name="role" value="assistant">Assistant</label>
-                </div>
-                <div class="type-parameters">
-                </div>
-            </form>
         </template>
 
-        <div class="operation-editor" id="model-selection" style="min-height: 130px;">
-            <label class="index">0</label>
-            <h2>Model</h2>
-            <div class="instructions">
-                <p>
-                    The model determines the AI's capabilities and behavior:
-                    It contains the architecture and trained weights of the
-                    neural network.
-                </p>
+        <div class="operation-editor" id="main-editor">
+            <div class="body is-root is-container">
+                <h2>Model selection</h2>
+                <div>TODO: Add model selection</div>
             </div>
-            <div>TODO: Add model selection</div>
+            <div class="child-operations" id="conversation-blocks">
+            </div>
         </div>
-        <div id="conversation-blocks"></div>
+
         <div id="results"></div>
         <div class="action-bar">
             <button id="submit">Run all</button>
