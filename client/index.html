@@ -3,69 +3,91 @@
     <head>
         <title>stupid-llama-tricks playground</title>
          <meta charset="UTF-8">
+        <script src="js/util.js"></script>
+        <script src="js/results.js"></script>
+        <script src="js/operation-editor.js"></script>
         <script src="main.js"></script>
         <link rel="stylesheet" href="styles.css">
     </head>
     <body>
         <h1>stupid-llama-tricks playground</h1>
-        <template id="conversation-block">
-            <details open>
-                <summary>
-                    <h2></h2>
-                    <div class="parameter" data-id="maxTokens" data-type="completion">
-                        <span>Max tokens</span>
-                        <span>300</span>
-                    </div>
-                </summary>
-                <div class="instructions">
-                    <p>TODO: Context-specific instructions here</p>
+
+        <template id="operation-editor-text">
+            <label class="index"></label>
+            <h2>Text input</h2>
+            <div class="instructions">
+                <p>TODO: Context-specific instructions here</p>
+            </div>
+            <form class="parameters">
+                <label class="row-role">Role</label>
+                <div class="row-role radio-group">
+                    <label><input type="radio" name="role" value="system">System</label>
+                    <label><input type="radio" name="role" value="user">User</label>
+                    <label><input type="radio" name="role" value="assistant">Assistant</label>
                 </div>
-                <form class="parameters">
-                    <label class="row-role">Role</label>
-                    <div class="row-role radio-group">
-                        <label><input type="radio" name="role" value="system">System</label>
-                        <label><input type="radio" name="role" value="user">User</label>
-                        <label><input type="radio" name="role" value="assistant">Assistant</label>
-                    </div>
-                    <label class="row-type">Type</label>
-                    <div class="row-type radio-group">
-                        <label><input type="radio" name="type" value="text">Text</label>
-                        <label><input type="radio" name="type" value="completion">Completion</label>
-                        <label><input type="radio" name="type" value="branch">Branch</label>
-                    </div>
-                    <div class="type-parameters" data-type="text">
+                <div class="type-parameters">
+                    <div class="text-input-wrapper">
                         <textarea></textarea>
                         <div class="indicator">...</div>
                     </div>
-                    <div class="type-parameters" data-type="completion">
-                        <label>
-                            Max tokens:
-                            <input name="maxTokens" type="number" value="300">
-                        </label>
-                    </div>
-                    <div class="type-parameters" data-type="branch">
-                    </div>
-                </form>
-            </details>
-            <div class="result"></div>
-        </template>
-        <div class="conversation-block" id="model-selection" style="min-height: 130px;">
-            <details open>
-                <summary>
-                    <h2>Model</h2>
-                </summary>
-                <div class="instructions">
-                    <p>
-                        The model determines the AI's capabilities and behavior:
-                        It contains the architecture and trained weights of the
-                        neural network.
-                    </p>
                 </div>
-                <div>TODO: Add model selection</div>
-            </details>
-            <div class="result"></div>
+            </form>
+        </template>
+
+        <template id="operation-editor-completion">
+            <label class="index"></label>
+            <h2>LLM completion</h2>
+            <div class="instructions">
+                <p>TODO: Context-specific instructions here</p>
+            </div>
+            <form class="parameters">
+                <label class="row-role">Role</label>
+                <div class="row-role radio-group">
+                    <label><input type="radio" name="role" value="system">System</label>
+                    <label><input type="radio" name="role" value="user">User</label>
+                    <label><input type="radio" name="role" value="assistant">Assistant</label>
+                </div>
+                <div class="type-parameters">
+                    <label>
+                        Max tokens:
+                        <input name="maxTokens" type="number" value="300">
+                    </label>
+                </div>
+            </form>
+        </template>
+
+        <template id="operation-editor-branch">
+            <label class="index"></label>
+            <h2>Branch</h2>
+            <div class="instructions">
+                <p>TODO: Context-specific instructions here</p>
+            </div>
+            <form class="parameters">
+                <label class="row-role">Role</label>
+                <div class="row-role radio-group">
+                    <label><input type="radio" name="role" value="system">System</label>
+                    <label><input type="radio" name="role" value="user">User</label>
+                    <label><input type="radio" name="role" value="assistant">Assistant</label>
+                </div>
+                <div class="type-parameters">
+                </div>
+            </form>
+        </template>
+
+        <div class="operation-editor" id="model-selection" style="min-height: 130px;">
+            <label class="index">0</label>
+            <h2>Model</h2>
+            <div class="instructions">
+                <p>
+                    The model determines the AI's capabilities and behavior:
+                    It contains the architecture and trained weights of the
+                    neural network.
+                </p>
+            </div>
+            <div>TODO: Add model selection</div>
         </div>
         <div id="conversation-blocks"></div>
+        <div id="results"></div>
         <div class="action-bar">
             <button id="submit">Run all</button>
         </div>
