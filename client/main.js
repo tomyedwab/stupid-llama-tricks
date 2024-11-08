@@ -17,6 +17,8 @@ class AppState {
         this.editingPopup = false;
         this.selectedTokens = {};
         this.customTexts = [];
+        this.tokenMap = {};
+
         for (const block of blocks) {
             this.addBlock(block);
         }
@@ -72,6 +74,19 @@ class AppState {
             this.logitScale = [minLogit, maxLogit];
             for (const operation of data) {
                 const block = this.blocksByID[operation.id];
+                if (block.type === "branch") {
+                    for (const op of operation.result) {
+                        for (const childBlock of op) {
+                            for (const token of Object.keys(childBlock.result.token_map)) {
+                                this.tokenMap[token] = childBlock.result.token_map[token];
+                            }
+                        }
+                    }
+                } else {
+                    for (const token of Object.keys(operation.result.token_map)) {
+                        this.tokenMap[token] = operation.result.token_map[token];
+                    }
+                }
                 block.onResult(
                     operation.result,
                     minLogit,
@@ -128,8 +143,55 @@ class AppState {
             this.renderPopup();
         });
         this.wordPopup.querySelector("button.apply").addEventListener("click", () => {
-            word.block.applyCustomTexts(word.index, this.selectedTokens, this.customTexts);
-            this.onSubmit();
+            let rawText = "";
+            let tokenized = [];
+            for (let i = 0; i < word.index; i++) {
+                rawText += this.tokenMap[word.block.cachedLogits[i][0][0]];
+                tokenized.push(word.block.cachedLogits[i][0][0]);
+            }
+            word.block.setType("text");
+            word.block.updateText(rawText);
+            word.block.updateTokenized(tokenized);
+            word.block.expand();
+
+            let options = [];
+            for (const token of Object.keys(this.selectedTokens)) {
+                options.push({
+                    "raw": this.tokenMap[token],
+                    "tokenized": [token],
+                });
+            }
+            for (const customText of this.customTexts) {
+                options.push({
+                    "raw": customText,
+                    "tokenized": null,
+                });
+            }
+
+            // Generate a new block ID
+            let newBlockID = "branch";
+            while (this.blocksByID[newBlockID] !== undefined) {
+                newBlockID = "branch-" + Math.random().toString(36).substring(2, 15);
+            }
+            for (let idx = 0; idx < this.blocks.length; idx++) {
+                if (this.blocks[idx] === word.block) {
+                    // Insert a new block after the current block
+                    const blocks = document.getElementById("conversation-blocks");
+                    const newBlock = new ConversationBlock(newBlockID, "assistant", "branch");
+                    newBlock.updateBranchOptions(options);
+                    blocks.insertBefore(newBlock, blocks.children[idx + 1]);
+                    this.addBlock(newBlock);
+                    break;
+                }
+            }
+
+            this.editingPopup = false;
+            this.selectedTokens = {};
+            this.customTexts = [];
+            this.renderPopup();
+            this.onUpdateValid();
+            //word.block.applyCustomTexts(word.index, this.selectedTokens, this.customTexts, text);
+            //this.onSubmit();
         });
     }
 
@@ -168,7 +230,7 @@ class AppState {
             }
             this.renderPopup();
 
-            word.element.appendChild(this.wordPopup);
+            word.appendChild(this.wordPopup);
         }
     }
 }
@@ -191,8 +253,9 @@ function getColor(logitValue, minLogit, maxLogit) {
     return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
-class Word {
+class Word extends HTMLDivElement {
     constructor(block, index, text, token, logitValue, minLogit, maxLogit, logits, tokenMap, isEditable, callback) {
+        super();
         this.block = block;
         this.index = index;
         this.text = text;
@@ -203,21 +266,20 @@ class Word {
         this.isEditable = isEditable;
 
         const color = getColor(logitValue, minLogit, maxLogit);
-        this.element = document.createElement("div");
-        this.element.classList.add("word");
-        this.element.innerHTML = "<span>" + text.replaceAll(" ", "&nbsp;") + "</span>";
-        this.element.style.borderBottom = `2px solid ${color}`;
+        this.classList.add("word");
+        this.innerHTML = "<span>" + text.replaceAll(" ", "&nbsp;") + "</span>";
+        this.style.borderBottom = `2px solid ${color}`;
         if (text.startsWith(" ")) {
-            this.element.style.paddingLeft = "8px";
+            this.style.paddingLeft = "8px";
         }
         if (text.endsWith(" ")) {
-            this.element.style.paddingRight = "8px";
+            this.style.paddingRight = "8px";
         }
-        this.element.addEventListener("mouseover", (evt) => {
+        this.addEventListener("mouseover", (evt) => {
             callback(this, true);
             evt.stopPropagation();
         });
-        this.element.addEventListener("click", (evt) => {
+        this.addEventListener("click", (evt) => {
             callback(this, false);
             evt.stopPropagation();
         });
@@ -257,23 +319,6 @@ class Word {
     }
 }
 
-class Parameter {
-    constructor(id, inputElement, parameterElement) {
-        this.id = id;
-        this.inputElement = inputElement;
-        this.value = this.inputElement.value;
-
-        this.inputElement.addEventListener("input", () => {
-            this.value = this.inputElement.value;
-            this.parameterElement.querySelector("span:nth-child(2)").textContent = this.value;
-        });
-
-        this.parameterElement = parameterElement;
-        this.parameterElement.querySelector("span:nth-child(2)").textContent = this.value;
-
-    }
-}
-
 const TYPE_LABELS = {
     "text": "Text",
     "completion": "Completion",
@@ -294,6 +339,9 @@ class ConversationBlock extends HTMLDivElement {
             "completion": {
                 "maxTokens": 300,
             },
+            "branch": {
+                "options": [],
+            },
         }
         this.cachedLogits = null;
 
@@ -304,8 +352,8 @@ class ConversationBlock extends HTMLDivElement {
         let templateContent = document.getElementById("conversation-block").content;
         this.appendChild(templateContent.cloneNode(true));
 
-        this.querySelector("input[name=role][value=" + defaultRole + "]").checked = true;
-        this.querySelector("input[name=type][value=" + defaultType + "]").checked = true;
+        this.setType(defaultType);
+        this.setRole(defaultRole);
 
         const textInput = this.querySelector("textarea");
         textInput.addEventListener("input", debounce(() => {
@@ -333,6 +381,16 @@ class ConversationBlock extends HTMLDivElement {
         this.updateSummary();
     }
 
+    setType(type) {
+        this.type = type;
+        this.querySelector("input[name=type][value=" + type + "]").checked = true;
+    }
+
+    setRole(role) {
+        this.role = role;
+        this.querySelector("input[name=role][value=" + role + "]").checked = true;
+    }
+
     onTextInput(value) {
         this.parameters["text"]["raw"] = value;
 
@@ -348,12 +406,33 @@ class ConversationBlock extends HTMLDivElement {
         })
             .then(response => response.json())
             .then(data => {
-                this.parameters["text"]["tokenized"] = data;
-                this.checkValid();
-                indicator.classList.remove("loading");
-                indicator.classList.add("valid");
-                indicator.innerHTML = `&#10004; ${data.length} tokens`;
+                this.updateTokenized(data);
             });
+    }
+
+    updateText(text) {
+        this.parameters["text"]["raw"] = text;
+        this.querySelector("textarea").value = text;
+    }
+
+    updateTokenized(tokenized) {
+        this.parameters["text"]["tokenized"] = tokenized;
+        this.checkValid();
+        const indicator = this.querySelector(".indicator");
+        indicator.classList.remove("loading");
+        indicator.classList.add("valid");
+        indicator.innerHTML = `&#10004; ${tokenized.length} tokens`;
+    }
+
+    updateBranchOptions(options) {
+        // TODO: Show tokenized indicator
+        this.parameters["branch"]["options"] = options;
+        let html = "";
+        for (let idx = 0; idx < options.length; idx++) {
+            html += `<label>Option ${idx+1}: <input name="branch-${idx}" value="${options[idx]["raw"]}" /></label>`;
+        }
+        this.querySelector("div.type-parameters[data-type=branch]").innerHTML = html;
+        this.checkValid();
     }
 
     updateSummary() {
@@ -365,8 +444,15 @@ class ConversationBlock extends HTMLDivElement {
             this.valid = this.parameters["text"]["tokenized"].length > 0;
         } else if (this.type === "completion") {
             this.valid = true;
+        } else if (this.type === "branch") {
+            this.valid = this.parameters["branch"]["options"].length > 0;
         }
         this.onUpdateValid();
+    }
+
+    expand() {
+        const detailsElement = this.querySelector("details");
+        detailsElement.open = true;
     }
 
     onSubmit() {
@@ -393,6 +479,27 @@ class ConversationBlock extends HTMLDivElement {
                     top_p: 10,
                 },
             };
+        } else if (this.type === "branch") {
+            let forks = [];
+            for (let idx = 0; idx < this.parameters["branch"]["options"].length; idx++) {
+                forks.push([
+                    {
+                        id: this.id + "-" + idx,
+                        name: "feed_tokens",
+                        feed_tokens: {
+                            tokens: this.parameters["branch"]["options"][idx]["tokenized"],
+                            top_p: 10,
+                        },
+                    },
+                ]);
+            }
+            return {
+                id: this.id,
+                name: "branch",
+                branch: {
+                    forks,
+                },
+            };
         }
     }
 
@@ -408,6 +515,21 @@ class ConversationBlock extends HTMLDivElement {
         const resultElement = this.querySelector(".result");
         resultElement.innerHTML = "";
 
+        if (this.type === "branch") {
+            for (let forkIdx = 0; forkIdx < result.length; forkIdx++) {
+                for (const childBlock of result[forkIdx]) {
+                    const div = document.createElement("div");
+                    for (let tokenIdx = 0; tokenIdx < childBlock.result.logits.length; tokenIdx++) {
+                        const text = childBlock.result.token_map[childBlock.result.logits[tokenIdx][0][0]];
+                        const word = new Word(this, tokenIdx, text, childBlock.result.logits[tokenIdx][0][0], childBlock.result.logits[tokenIdx][0][1], minLogit, maxLogit, childBlock.result.logits[tokenIdx], childBlock.result.token_map, false, callback);
+                        div.appendChild(word);
+                    }
+                    resultElement.appendChild(div);
+                }
+            }
+            return;
+        }
+
         for (let tokenIdx = 0; tokenIdx < result.logits.length; tokenIdx++) {
             if (this.type === "text") {
                 let logitValue = 0.0;
@@ -418,18 +540,19 @@ class ConversationBlock extends HTMLDivElement {
                 });
                 const text = result.token_map[this.parameters["text"]["tokenized"][tokenIdx]];
                 const word = new Word(this, tokenIdx, text, this.parameters["text"]["tokenized"][tokenIdx], logitValue, minLogit, maxLogit, result.logits[tokenIdx], result.token_map, false, callback);
-                resultElement.appendChild(word.element);
+                resultElement.appendChild(word);
             } else if (this.type === "completion") {
                 const text = result.token_map[result.logits[tokenIdx][0][0]];
                 const word = new Word(this, tokenIdx, text, result.logits[tokenIdx][0][0], result.logits[tokenIdx][0][1], minLogit, maxLogit, result.logits[tokenIdx], result.token_map, true, callback);
-                resultElement.appendChild(word.element);
-            }
+                resultElement.appendChild(word);
+            } 
         }
     }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     customElements.define("conversation-block", ConversationBlock, { extends: "div" });
+    customElements.define("conversation-word", Word, { extends: "div" });
 
     const blocks = document.getElementById("conversation-blocks");
 
