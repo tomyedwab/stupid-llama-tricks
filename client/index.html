@@ -30,6 +30,11 @@
                         </div>
                     </div>
                 </form>
+                <div class="button-bar">
+                    <button class="add">+ Add...</button>
+                    <button class="remove">- Remove</button>
+                    <button class="help">? Help</button>
+                </div>
             </div>
         </template>
 
@@ -51,6 +56,11 @@
                         </label>
                     </div>
                 </form>
+                <div class="button-bar">
+                    <button class="add">+ Add...</button>
+                    <button class="remove">- Remove</button>
+                    <button class="help">? Help</button>
+                </div>
             </div>
         </template>
 
@@ -66,8 +76,20 @@
                         <label><input type="radio" name="role" value="assistant">Assistant</label>
                     </div>
                     <div class="type-parameters">
+                        <label class="row-role">View branch:</label>
+                        <div class="branch-selector radio-group">
+                        </div>
+                        <div class="button-bar">
+                            <button class="add-branch">+ Add branch</button>
+                            <button class="remove-branch">- Remove branch</button>
+                        </div>
                     </div>
                 </form>
+            </div>
+            <div class="button-bar below-child-operations">
+                <button class="add">+ Add...</button>
+                <button class="remove">- Remove</button>
+                <button class="help">? Help</button>
             </div>
         </template>
 
@@ -84,5 +106,17 @@
         <div class="action-bar">
             <button id="submit">Run all</button>
         </div>
+
+        <dialog id="add-operation-dialog">
+            <h2>Choose a type of operation to add:</h2>
+            <form method="dialog">
+                <label><input type="radio" name="type" value="text">Text input</label>
+                <label><input type="radio" name="type" value="completion">LLM completion</label>
+                <label><input type="radio" name="type" value="branch">Branch</label>
+                <button class="cancel">Cancel</button>
+                <button class="ok">OK</button>
+            </form>
+        </dialog>
+
     </body>
 </html>

@@ -15,6 +15,18 @@ h2 {
     font-size: 18px;
 }
 
+button {
+    background-color: #ccf;
+    border: 0;
+    border-radius: 8px;
+    padding: 4px 12px;
+    margin: 0 8px;
+    
+    &:hover {
+        background-color: #aac;
+    }
+}
+
 #main-editor {
     max-width: 740px;
 }
@@ -66,7 +78,7 @@ h2 {
     & .parameters {
         display: grid;
         grid-template-columns: 50px auto;
-        grid-template-rows: 1fr 1fr auto;
+        grid-template-rows: 1fr auto;
 
         & .row-role {
             grid-row: 1 / 2;
@@ -117,6 +129,54 @@ h2 {
         border-bottom: 36px solid #eee;
         border-bottom-left-radius: 16px;
         border-bottom-right-radius: 16px;
+    }
+
+    & .visible-branch {
+        display: none;
+    }
+    &:has(input[name=selected-branch][value="1"]:checked) .visible-branch[data-id="1"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="2"]:checked) .visible-branch[data-id="2"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="3"]:checked) .visible-branch[data-id="3"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="4"]:checked) .visible-branch[data-id="4"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="5"]:checked) .visible-branch[data-id="5"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="6"]:checked) .visible-branch[data-id="6"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="7"]:checked) .visible-branch[data-id="7"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="8"]:checked) .visible-branch[data-id="8"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="9"]:checked) .visible-branch[data-id="9"] {
+        display: block;
+    }
+    &:has(input[name=selected-branch][value="10"]:checked) .visible-branch[data-id="10"] {
+        display: block;
+    }
+
+    & .button-bar {
+        width: 100%;
+        text-align: center;
+
+        & button {
+            margin: 8px 3px 0 4px;
+        }
+
+        &.below-child-operations {
+            position: absolute;
+            bottom: 6px;
+        }
     }
 }
 
@@ -190,26 +250,11 @@ h2 {
         width: 206px;
     }
     & .word-input button {
-        background-color: #fcc;
-        border: 0;
-        border-radius: 8px;
-        padding: 4px 8px;
         margin: 0 4px;
     }
 
     & td.buttons {
         text-align: center;
-    }
-    & td.buttons button {
-        background-color: #ccf;
-        border: 0;
-        border-radius: 8px;
-        padding: 4px 12px;
-        margin: 0 8px;
-        
-        &:hover {
-            background-color: #aac;
-        }
     }
 }
 
@@ -229,15 +274,21 @@ h2 {
     width: 100%;
     text-align: center;
 
-    & button {
-        background-color: #ccf;
-        border: 0;
-        border-radius: 8px;
-        padding: 4px 12px;
-        margin: 0 8px;
-        
-        &:hover {
-            background-color: #aac;
-        }
+}
+
+::backdrop {
+    background-color: #00000088;
+}
+
+dialog {
+    border-radius: 16px;
+    border: 1px solid #333;
+
+    & h2 {
+        margin-top: 0;
+    }
+    & label {
+        display: block;
+        margin: 12px 0;
     }
 }
