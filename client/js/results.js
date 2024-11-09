@@ -6,8 +6,8 @@ const COLORS = [
     [5, 87, 94],
 ]
 
-function getColor(logitValue, minLogit, maxLogit) {
-    const normalizedLogitValue = (logitValue - maxLogit) * (COLORS.length - 1) / (minLogit - maxLogit);
+function getColor(logitValue, logitScale) {
+    const normalizedLogitValue = (logitValue - logitScale[1]) * (COLORS.length - 1) / (logitScale[0] - logitScale[1]);
     const colorIdx = Math.min(COLORS.length - 2, Math.floor(normalizedLogitValue));
     const colorFrac = normalizedLogitValue - colorIdx;
     const h = Math.round(COLORS[colorIdx][0] + colorFrac * (COLORS[colorIdx + 1][0] - COLORS[colorIdx][0]));
@@ -17,8 +17,9 @@ function getColor(logitValue, minLogit, maxLogit) {
 }
 
 class Word extends HTMLDivElement {
-    constructor(index, text, token, logitValue, minLogit, maxLogit, logits, tokenMap, isEditable, callback) {
+    constructor(operationId, index, text, token, logitValue, logitScale, logits, tokenMap, isEditable, callback) {
         super();
+        this.operationId = operationId;
         this.index = index;
         this.text = text;
         this.token = token;
@@ -27,7 +28,7 @@ class Word extends HTMLDivElement {
         this.tokenMap = tokenMap;
         this.isEditable = isEditable;
 
-        const color = getColor(logitValue, minLogit, maxLogit);
+        const color = getColor(logitValue, logitScale);
         this.classList.add("word");
         this.innerHTML = "<span>" + text.replaceAll(" ", "&nbsp;") + "</span>";
         this.style.borderBottom = `2px solid ${color}`;
@@ -47,7 +48,7 @@ class Word extends HTMLDivElement {
         });
     }
 
-    getPopupHTML(selectedTokens, customTexts, minLogit, maxLogit) {
+    getPopupHTML(selectedTokens, customTexts, logitScale) {
         const rows = [];
         const softmax = [];
         // TODO: Make configurable?
@@ -63,7 +64,7 @@ class Word extends HTMLDivElement {
             const width = Math.max(1, Math.round(softmax[i] * 80));
             rows.push(
                 (this.logits[i][0] === this.token ? `<tr class="selected">` : `<tr>`) + 
-                `<td class="word-bar"><div style="width: ${width}px; height: 100%; background-color: ${getColor(this.logits[i][1], minLogit, maxLogit)}"></td>` + 
+                `<td class="word-bar"><div style="width: ${width}px; height: 100%; background-color: ${getColor(this.logits[i][1], logitScale)}"></td>` + 
                 `<td class="word-text"><label><input type="checkbox" data-token="${this.logits[i][0]}" ${selectedTokens[this.logits[i][0]] ? "checked" : ""} />${this.tokenMap[this.logits[i][0]]}</label></td>` +
                 `</tr>`);
         }
@@ -96,6 +97,9 @@ class Results extends HTMLDivElement {
         this.editingPopup = false;
         this.selectedTokens = {};
         this.customTexts = [];
+        this.cachedLogits = {};
+
+        this.onApplyEdits = () => {};
 
         this.setHoverWord = debounce((word) => {
             this.handleWordSelection(word, true);
@@ -118,69 +122,71 @@ class Results extends HTMLDivElement {
         const callback = (word, isHover) => isHover ? this.setHoverWord(word) : this.handleWordSelection(word, false);
 
         for (const operation of responseData) {
-            if (operation.name === "branch") {
-                for (const fork of operation.result) {
-                    for (const childOperation of fork) {
-                        for (const token of Object.keys(childOperation.result.token_map)) {
-                            this.tokenMap[token] = childOperation.result.token_map[token];
-                        }
+            this.renderOperationResult(operation, callback, minLogit, maxLogit);
+        }
+    }
 
-                        const div = document.createElement("div");
-                        for (let tokenIdx = 0; tokenIdx < childOperation.result.logits.length; tokenIdx++) {
-                            const text = childOperation.result.token_map[childOperation.result.logits[tokenIdx][0][0]];
-                            const word = new Word(tokenIdx, text, childOperation.result.logits[tokenIdx][0][0], childOperation.result.logits[tokenIdx][0][1], minLogit, maxLogit, childOperation.result.logits[tokenIdx], childOperation.result.token_map, false, callback);
-                            div.appendChild(word);
-                        }
-                        this.appendChild(div);
-                    }
-                }
+    renderOperationResult(operation, callback) {
+        if (operation.name === "branch") {
+            const blockLabel = document.createElement("div");
+            blockLabel.classList.add("block-label");
+            blockLabel.textContent = '#' + operation.id;
+            this.appendChild(blockLabel);
 
-            } else {
-                const blockLabel = document.createElement("div");
-                blockLabel.classList.add("block-label");
-                blockLabel.textContent = '#' + operation.id;
-                this.appendChild(blockLabel);
-
-                for (const token of Object.keys(operation.result.token_map)) {
-                    this.tokenMap[token] = operation.result.token_map[token];
-                }
-                for (let tokenIdx = 0; tokenIdx < operation.result.logits.length; tokenIdx++) {
-                    if (operation.name === "feed_tokens") {
-                        let logitValue = 0.0;
-                        operation.result.logits[tokenIdx].forEach(logit => {
-                            if (logit[0] === operation.feed_tokens.tokens[tokenIdx]) {
-                                logitValue = logit[1];
-                            }
-                        });
-                        const text = operation.result.token_map[operation.feed_tokens.tokens[tokenIdx]];
-                        const word = new Word(tokenIdx, text, operation.feed_tokens.tokens[tokenIdx], logitValue, minLogit, maxLogit, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
-                        if (text.startsWith("\n")) {
-                            this.appendChild(document.createElement("br"));
-                        }
-                        this.appendChild(word);
-                        if (text.endsWith("\n") || text.endsWith("<|end|>")) {
-                            this.appendChild(document.createElement("br"));
-                        }
-                    } else if (operation.name === "completion") {
-                        const text = operation.result.token_map[operation.result.logits[tokenIdx][0][0]];
-                        const word = new Word(tokenIdx, text, operation.result.logits[tokenIdx][0][0], operation.result.logits[tokenIdx][0][1], minLogit, maxLogit, operation.result.logits[tokenIdx], operation.result.token_map, true, callback);
-                        if (text.startsWith("\n")) {
-                            this.appendChild(document.createElement("br"));
-                        }
-                        this.appendChild(word);
-                        if (text.endsWith("\n") || text.endsWith("<|end|>")) {
-                            this.appendChild(document.createElement("br"));
-                        }
-                    } 
+            for (const fork of operation.result) {
+                for (const childOperation of fork) {
+                    this.renderOperationResult(childOperation, callback);
                 }
             }
-
+            return;
         }
+
+        for (const token of Object.keys(operation.result.token_map)) {
+            this.tokenMap[token] = operation.result.token_map[token];
+        }
+
+        const blockLabel = document.createElement("div");
+        blockLabel.classList.add("block-label");
+        blockLabel.textContent = '#' + operation.id;
+        this.appendChild(blockLabel);
+
+        this.cachedLogits[operation.id] = operation.result.logits;
+
+        for (let tokenIdx = 0; tokenIdx < operation.result.logits.length; tokenIdx++) {
+            if (operation.name === "feed_tokens") {
+                let logitValue = 0.0;
+                operation.result.logits[tokenIdx].forEach(logit => {
+                    if (logit[0] === operation.feed_tokens.tokens[tokenIdx]) {
+                        logitValue = logit[1];
+                    }
+                });
+                const text = operation.result.token_map[operation.feed_tokens.tokens[tokenIdx]];
+                const word = new Word(operation.id, tokenIdx, text, operation.feed_tokens.tokens[tokenIdx], logitValue, this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
+                if (text.startsWith("\n")) {
+                    this.appendChild(document.createElement("br"));
+                }
+                this.appendChild(word);
+                if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                    this.appendChild(document.createElement("br"));
+                }
+            } else if (operation.name === "completion") {
+                const text = operation.result.token_map[operation.result.logits[tokenIdx][0][0]];
+                const word = new Word(operation.id, tokenIdx, text, operation.result.logits[tokenIdx][0][0], operation.result.logits[tokenIdx][0][1], this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, true, callback);
+                if (text.startsWith("\n")) {
+                    this.appendChild(document.createElement("br"));
+                }
+                this.appendChild(word);
+                if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                    this.appendChild(document.createElement("br"));
+                }
+            } 
+        }
+
     }
 
     renderPopup() {
         const word = this.selectedWord || this.hoverWord;
-        this.wordPopup.innerHTML = word.getPopupHTML(this.selectedTokens, this.customTexts, this.logitScale[0], this.logitScale[1]);
+        this.wordPopup.innerHTML = word.getPopupHTML(this.selectedTokens, this.customTexts, this.logitScale);
 
         if (this.editingPopup) {
             this.wordPopup.classList.add("editing");
@@ -225,55 +231,38 @@ class Results extends HTMLDivElement {
             this.renderPopup();
         });
         this.wordPopup.querySelector("button.apply").addEventListener("click", () => {
-            /* TODO(tom)
             let rawText = "";
             let tokenized = [];
             for (let i = 0; i < word.index; i++) {
-                rawText += this.tokenMap[word.block.cachedLogits[i][0][0]];
-                tokenized.push(word.block.cachedLogits[i][0][0]);
+                rawText += this.tokenMap[this.cachedLogits[word.operationId][i][0][0]];
+                tokenized.push(this.cachedLogits[word.operationId][i][0][0]);
             }
-            word.block.setType("text");
-            word.block.updateText(rawText);
-            word.block.updateTokenized(tokenized);
-            word.block.expand();
 
-            let options = [];
+            const branchOptions = [];
             for (const token of Object.keys(this.selectedTokens)) {
-                options.push({
+                branchOptions.push({"operations": [["text", "assistant", {
                     "raw": this.tokenMap[token],
                     "tokenized": [token],
-                });
+                }]]});
             }
             for (const customText of this.customTexts) {
-                options.push({
+                branchOptions.push({"operations": [["text", "assistant", {
                     "raw": customText,
-                    "tokenized": null,
-                });
+                    "tokenized": [],
+                }]]});
             }
 
-            // Generate a new block ID
-            let newBlockID = "branch";
-            while (this.blocksByID[newBlockID] !== undefined) {
-                newBlockID = "branch-" + Math.random().toString(36).substring(2, 15);
-            }
-            for (let idx = 0; idx < this.blocks.length; idx++) {
-                if (this.blocks[idx] === word.block) {
-                    // Insert a new block after the current block
-                    const blocks = document.getElementById("conversation-blocks");
-                    const newBlock = new ConversationBlock(newBlockID, "assistant", "branch");
-                    newBlock.updateBranchOptions(options);
-                    blocks.insertBefore(newBlock, blocks.children[idx + 1]);
-                    this.addBlock(newBlock);
-                    break;
-                }
-            }
+            this.onApplyEdits(word.operationId, {
+                "raw": rawText,
+                "tokenized": tokenized,
+            }, {
+                "options": branchOptions,
+            });
 
             this.editingPopup = false;
             this.selectedTokens = {};
             this.customTexts = [];
             this.renderPopup();
-            this.onUpdateValid();
-            */
         });
     }
 

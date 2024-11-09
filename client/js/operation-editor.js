@@ -73,6 +73,9 @@ class OperationEditorText extends OperationEditor {
             this.onTextInput(textInput.value);
         }, 300));
         this.updateTokenized(this.parameters["tokenized"]);
+        if (this.parameters["raw"].length > 0 && this.parameters["tokenized"].length === 0) {
+            this.onTextInput(this.parameters["raw"]);
+        }
     }
 
     checkValid() {
