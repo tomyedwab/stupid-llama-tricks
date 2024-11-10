@@ -55,25 +55,26 @@ class LlamaRequest(object):
             "logit": action.current_match_logit,
         }
 
-    async def feed_tokens(self, tokens: List[int], top_p: int = 0):
+    async def feed_tokens(self, role: str, tokens: List[int], top_p: int = 0):
         current_beam_idx = beam_idx.get()
-        action = FeedTokens(tokens, top_p)
+        action = FeedTokens(role, tokens, top_p)
         await self.beams[current_beam_idx].set_action(action)
         await action.wait()
         return {
+            "tokens": action.tokens,
             "logits": action.logits,
             "token_map": action.token_map,
         }
 
-    async def completion(self, max_tokens: int, top_p: int = 0):
+    async def completion(self, role: str, max_tokens: int, top_p: int = 0):
         current_beam_idx = beam_idx.get()
-        action = Completion(max_tokens, top_p)
+        action = Completion(role, max_tokens, top_p)
         await self.beams[current_beam_idx].set_action(action)
         await action.wait()
         return {
+            "tokens": action.tokens,
             "logits": action.logits,
             "token_map": action.token_map,
-            "text": action.response_text,
         }
 
     async def fork(self, new_action_function: Callable[["LlamaRequest"], Awaitable[Any]], args: List[ForkArguments]):

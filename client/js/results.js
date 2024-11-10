@@ -145,6 +145,43 @@ class Results extends HTMLDivElement {
             this.tokenMap[token] = operation.result.token_map[token];
         }
 
+        let startIndex = 0;
+        while (true) {
+            const text = operation.result.token_map[operation.result.tokens[startIndex]];
+            if (text === "" || text === "<|end|>") {
+                startIndex++;
+                continue;
+            }
+            if (text === "<|system|>") {
+                const label = document.createElement("div");
+                label.classList.add("role-label");
+                label.textContent = "System:";
+                this.appendChild(label);
+                startIndex++;
+                continue;
+            }
+            if (text === "<|user|>") {
+                const label = document.createElement("div");
+                label.classList.add("role-label");
+                label.textContent = "User:";
+                this.appendChild(label);
+                startIndex++;
+                continue;
+            }
+            if (text === "<|assistant|>") {
+                const label = document.createElement("div");
+                label.classList.add("role-label");
+                label.textContent = "Assistant:";
+                this.appendChild(label);
+                startIndex++;
+                continue;
+            }
+            break;
+        }
+        if (operation.result.token_map[operation.result.tokens[0]] === " <|end|>") {
+            startIndex = 1;
+        }
+
         const blockLabel = document.createElement("div");
         blockLabel.classList.add("block-label");
         blockLabel.textContent = '#' + operation.id;
@@ -152,21 +189,21 @@ class Results extends HTMLDivElement {
 
         this.cachedLogits[operation.id] = operation.result.logits;
 
-        for (let tokenIdx = 0; tokenIdx < operation.result.logits.length; tokenIdx++) {
+        for (let tokenIdx = startIndex; tokenIdx < operation.result.logits.length; tokenIdx++) {
             if (operation.name === "feed_tokens") {
                 let logitValue = 0.0;
                 operation.result.logits[tokenIdx].forEach(logit => {
-                    if (logit[0] === operation.feed_tokens.tokens[tokenIdx]) {
+                    if (logit[0] === operation.result.tokens[tokenIdx]) {
                         logitValue = logit[1];
                     }
                 });
-                const text = operation.result.token_map[operation.feed_tokens.tokens[tokenIdx]];
-                const word = new Word(operation.id, tokenIdx, text, operation.feed_tokens.tokens[tokenIdx], logitValue, this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
+                const text = operation.result.token_map[operation.result.tokens[tokenIdx]];
+                const word = new Word(operation.id, tokenIdx, text, operation.result.tokens[tokenIdx], logitValue, this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
                 if (text.startsWith("\n")) {
                     this.appendChild(document.createElement("br"));
                 }
                 this.appendChild(word);
-                if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                if (text.endsWith("\n")) {
                     this.appendChild(document.createElement("br"));
                 }
             } else if (operation.name === "completion") {
@@ -175,8 +212,12 @@ class Results extends HTMLDivElement {
                 if (text.startsWith("\n")) {
                     this.appendChild(document.createElement("br"));
                 }
-                this.appendChild(word);
-                if (text.endsWith("\n") || text.endsWith("<|end|>")) {
+                if (text === "<|end|>") {
+                    this.appendChild(document.createElement("br"));
+                } else {
+                    this.appendChild(word);
+                }
+                if (text.endsWith("\n")) {
                     this.appendChild(document.createElement("br"));
                 }
             } 

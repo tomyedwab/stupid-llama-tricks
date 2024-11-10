@@ -91,10 +91,9 @@ class OperationEditorText extends OperationEditor {
         indicator.classList.add("loading");
         indicator.textContent = "...";
 
-        const formattedText = `<|${this.role}|>\n${value}<|end|>\n`;
         fetch("/tokenize", {
             method: "POST",
-            body: JSON.stringify({ text: formattedText }),
+            body: JSON.stringify({ text: value }),
         })
             .then(response => response.json())
             .then(data => {
@@ -129,6 +128,7 @@ class OperationEditorText extends OperationEditor {
             id: `${this.id}`,
             name: "feed_tokens",
             feed_tokens: {
+                role: this.role,
                 tokens: this.parameters["tokenized"],
                 top_p: 10,
             },
@@ -163,6 +163,7 @@ class OperationEditorCompletion extends OperationEditor {
             id: `${this.id}`,
             name: "completion",
             completion: {
+                role: this.role,
                 max_tokens: this.parameters["maxTokens"],
                 top_p: 10,
             },

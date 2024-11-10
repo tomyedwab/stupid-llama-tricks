@@ -2,7 +2,7 @@ import asyncio
 import ctypes
 import logging
 import time
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 
 import llama_cpp
 
@@ -20,9 +20,11 @@ class LlamaBeam(object):
         if parent is not None:
             self.response = parent.response
             self.pos = parent.pos
+            self.current_role = parent.current_role
         else:
             self.pos = 0
             self.response = ""
+            self.current_role = None
         self.seq_num = -1
         self.current_action = Wait()
         self.logits = None
@@ -93,6 +95,9 @@ class LlamaBeam(object):
             llama_cpp.llama_sample_temp(ctx, candidates_p, temperature)
             llama_cpp.llama_sample_top_p(ctx, candidates_p, 0.9, max(1, self.current_action.top_p))
             selected_token = llama_cpp.llama_sample_token(ctx, candidates_p)
+            self.current_action.tokens.append(selected_token)
+            if selected_token not in self.current_action.token_map:
+                self.current_action.token_map[selected_token] = token_to_string(model, selected_token)
             if self.current_action.top_p > 0:
                 self.current_action.logits.append([
                     (tkn.id, tkn.logit)
@@ -131,6 +136,13 @@ class LlamaBeam(object):
 
         return selected_token
 
+    def get_tokens_for_role_switch(self, tokens_for_role: Dict[str, List[int]], role: str) -> List[int]:
+        if role == self.current_role:
+            return []
+        if self.current_role is None:
+            return tokens_for_role["null_" + role]
+        return tokens_for_role["end_" + role]
+
     async def decode_tokens(
             self,
             ctx: llama_cpp.llama_context_p,
@@ -139,14 +151,18 @@ class LlamaBeam(object):
             candidates_p: llama_cpp.llama_token_data_array,
             batch: llama_cpp.llama_batch,
             batch_size: int,
+            tokens_for_role: Dict[str, List[int]],
         ) -> ctypes.Array[ctypes.c_float]:
         if self.is_done():
             return False
         
-        if not isinstance(self.current_action, FeedTokens):
+        if isinstance(self.current_action, Completion) and self.current_action.role != self.current_role:
+            tokens = self.get_tokens_for_role_switch(tokens_for_role, self.current_action.role)
+        elif isinstance(self.current_action, FeedTokens):
+            tokens = self.get_tokens_for_role_switch(tokens_for_role, self.current_action.role) + self.current_action.tokens
+        else:
             return True
 
-        tokens = self.current_action.tokens
         top_tokens = {token for token in tokens}
         if self.current_action.top_p > 0:
             self.current_action.logits = [[]] * len(tokens)
@@ -195,6 +211,8 @@ class LlamaBeam(object):
 
         self.logits = llama_cpp.llama_get_logits_ith(ctx, end - start - 1)
         self.response += "".join(self.current_action.token_map[token] for token in self.current_action.tokens)
+        self.current_role = self.current_action.role
+        self.current_action.tokens = tokens
         await self.set_action(Wait())
 
         return True

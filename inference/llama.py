@@ -41,6 +41,15 @@ class Llama(object):
 
         self.batch = llama_cpp.llama_batch_init(self.batch_size, 0, 1)
 
+        self.tokens_for_role = {
+            "null_system": self.tokenize("<|system|>\n"),
+            "null_user": self.tokenize("<|user|>\n"),
+            "null_assistant": self.tokenize("<|assistant|>\n"),
+            "end_system": self.tokenize("<|end|>\n<|system|>\n"),
+            "end_user": self.tokenize("<|end|>\n<|user|>\n"),
+            "end_assistant": self.tokenize("<|end|>\n<|assistant|>\n"),
+        }
+
     def _stop(self):
         llama_cpp.llama_batch_free(self.batch)
         llama_cpp.llama_kv_cache_clear(self.ctx)
@@ -107,7 +116,7 @@ class Llama(object):
                 if beam.seq_num < 0:
                     continue
 
-                if not await beam.decode_tokens(self.ctx, self.model, self.vocab_size, self.candidates_p, self.batch, self.batch_size):
+                if not await beam.decode_tokens(self.ctx, self.model, self.vocab_size, self.candidates_p, self.batch, self.batch_size, self.tokens_for_role):
                     # There was an error decoding tokens, so deschedule the beam for now
                     print(f"Descheduling beam {beam.index} for request {request.id} due to error")
                     llama_cpp.llama_kv_cache_seq_rm(self.ctx, beam.seq_num, -1, -1)

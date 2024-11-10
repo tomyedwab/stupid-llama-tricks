@@ -30,20 +30,23 @@ class MatchPattern(Action):
         self.current_match = ""
 
 class FeedTokens(Action):
-    def __init__(self, tokens: List[int], top_p: int = 0):
+    def __init__(self, role: str, tokens: List[int], top_p: int = 0):
         super().__init__()
         self.type = "feed_tokens"
+        self.role = role
         self.tokens = tokens
         self.logits = None
         self.top_p = top_p
         self.token_map = {}
 
 class Completion(Action):
-    def __init__(self, max_tokens: int, top_p: int = 0):
+    def __init__(self, role: str, max_tokens: int, top_p: int = 0):
         super().__init__()
         self.type = "completion"
+        self.role = role
         self.remaining_tokens = max_tokens
         self.response_text = ""
         self.logits = []
         self.top_p = top_p
         self.token_map = {}
+        self.tokens = []
