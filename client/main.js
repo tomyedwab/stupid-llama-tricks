@@ -41,6 +41,13 @@ class AppState {
         document.getElementById('add-operation-dialog').querySelector('button.ok').addEventListener("click", () => {
             this.onAddOperationDialogSubmit();
         });
+
+        this.tokenMap = null;
+        fetch("/token_map").then(response => {
+            return response.json();
+        }).then(tokenMap => {
+            this.tokenMap = tokenMap;
+        });
     }
 
     addOperation(operation, afterOperationId) {
@@ -101,7 +108,7 @@ class AppState {
     }
 
     onUpdate() {
-        this.submitButton.disabled = !this.operations.every(operation => operation.valid);
+        this.submitButton.disabled = (this.tokenMap === null) || !this.operations.every(operation => operation.valid);
 
         let nextOperationId = 1;
         this.operationsByID = {};
@@ -124,17 +131,36 @@ class AppState {
         for (const operation of this.operations) {
             operations.push(operation.onSubmit());
         }
-        fetch("/completion", {
+
+        this.results = new Results(this.operations, this.tokenMap);
+        const results = document.getElementById("results");
+        results.innerHTML = "";
+        results.appendChild(this.results);
+        this.results.onApplyEdits = (operationId, textParameters, branchParameters) => {
+            this.onApplyEdits(operationId, textParameters, branchParameters);
+        };
+
+        fetch("/streaming_completion", {
             method: "POST",
             body: JSON.stringify({ operations }),
-        }).then(response => response.json()).then(data => {
-            this.results = new Results(data);
-            const results = document.getElementById("results");
-            results.innerHTML = "";
-            results.appendChild(this.results);
-            this.results.onApplyEdits = (operationId, textParameters, branchParameters) => {
-                this.onApplyEdits(operationId, textParameters, branchParameters);
+        }).then(response => {
+            const reader = response.body.getReader();
+
+            const readChunk = async () => {
+                const {done, value} = await reader.read();
+                if (done) return;
+                
+                const lines = new TextDecoder().decode(value).split('\n');
+                for (const line of lines) {
+                    if (line) {
+                        const data = JSON.parse(line);
+                        this.results.addToken(...data);
+                    }
+                }
+                readChunk();
             };
+
+            readChunk();
         });
     }
 

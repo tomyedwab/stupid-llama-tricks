@@ -17,25 +17,44 @@ function getColor(logitValue, logitScale) {
 }
 
 class Word extends HTMLDivElement {
-    constructor(operationId, index, text, token, logitValue, logitScale, logits, tokenMap, isEditable, callback) {
+    constructor(operationId, index, token, logits, tokenMap, isEditable, callback) {
         super();
         this.operationId = operationId;
         this.index = index;
-        this.text = text;
+        this.text = tokenMap[token];
         this.token = token;
-        this.logitValue = logitValue;
         this.logits = logits;
         this.tokenMap = tokenMap;
         this.isEditable = isEditable;
 
-        const color = getColor(logitValue, logitScale);
+        this.tokenLogit = 0.0;
+        for (const logit of logits) {
+            if (logit[0] === token) {
+                this.tokenLogit = logit[1];
+            }
+        }
+
         this.classList.add("word");
-        this.innerHTML = "<span>" + text.replaceAll(" ", "&nbsp;") + "</span>";
-        this.style.borderBottom = `2px solid ${color}`;
-        if (text.startsWith(" ")) {
+
+        if (this.text === "<|end|>") {
+            return;
+        } else if (this.text === "<|system|>") {
+            this.classList.add("role-label");
+            this.innerHTML = "System:";
+        } else if (this.text === "<|user|>") {
+            this.classList.add("role-label");
+            this.innerHTML = "User:";
+        } else if (this.text === "<|assistant|>") {
+            this.classList.add("role-label");
+            this.innerHTML = "Assistant:";
+        } else {
+            this.innerHTML = "<span>" + this.text.replaceAll(" ", "&nbsp;") + "</span>";
+        }
+
+        if (this.text.startsWith(" ")) {
             this.style.paddingLeft = "8px";
         }
-        if (text.endsWith(" ")) {
+        if (this.text.endsWith(" ")) {
             this.style.paddingRight = "8px";
         }
         this.addEventListener("mouseover", (evt) => {
@@ -46,6 +65,11 @@ class Word extends HTMLDivElement {
             callback(this, false);
             evt.stopPropagation();
         });
+    }
+
+    updateColor(logitScale) {
+        const color = getColor(this.tokenLogit, logitScale);
+        this.style.borderBottom = `2px solid ${color}`;
     }
 
     getPopupHTML(selectedTokens, customTexts, logitScale) {
@@ -85,10 +109,9 @@ class Word extends HTMLDivElement {
 customElements.define("conversation-word", Word, { extends: "div" });
 
 class Results extends HTMLDivElement {
-    constructor(responseData) {
+    constructor(operations, tokenMap) {
         super();
 
-        this.tokenMap = {};
         this.logitScale = [0.0, 0.0];
 
         this.hoverWord = null;
@@ -98,6 +121,8 @@ class Results extends HTMLDivElement {
         this.selectedTokens = {};
         this.customTexts = [];
         this.cachedLogits = {};
+        this.operationDivs = {};
+        this.tokenMap = tokenMap;
 
         this.onApplyEdits = () => {};
 
@@ -105,124 +130,86 @@ class Results extends HTMLDivElement {
             this.handleWordSelection(word, true);
         }, 300);
 
-        let minLogit = Infinity;
-        let maxLogit = -Infinity;
-        for (const operation of responseData) {
-            if (operation.result.logits) {
-                for (const tokenLogits of operation.result.logits) {
-                    for (const logit of tokenLogits) {
-                        minLogit = Math.min(minLogit, logit[1]);
-                        maxLogit = Math.max(maxLogit, logit[1]);
-                    }
-                }
-            }
-        }
-        this.logitScale = [minLogit, maxLogit];
+        this.logitScale = [Infinity, -Infinity];
 
-        const callback = (word, isHover) => isHover ? this.setHoverWord(word) : this.handleWordSelection(word, false);
+        this.callback = (word, isHover) => isHover ? this.setHoverWord(word) : this.handleWordSelection(word, false);
 
-        for (const operation of responseData) {
-            this.renderOperationResult(operation, callback, minLogit, maxLogit);
+        for (const operation of operations) {
+            this.appendChild(this.createOperationDiv(operation));
         }
     }
 
-    renderOperationResult(operation, callback) {
-        if (operation.name === "branch") {
-            const blockLabel = document.createElement("div");
-            blockLabel.classList.add("block-label");
-            blockLabel.textContent = '#' + operation.id;
-            this.appendChild(blockLabel);
-
-            for (const fork of operation.result) {
-                for (const childOperation of fork) {
-                    this.renderOperationResult(childOperation, callback);
-                }
-            }
-            return;
-        }
-
-        for (const token of Object.keys(operation.result.token_map)) {
-            this.tokenMap[token] = operation.result.token_map[token];
-        }
-
-        let startIndex = 0;
-        while (true) {
-            const text = operation.result.token_map[operation.result.tokens[startIndex]];
-            if (text === "" || text === "<|end|>") {
-                startIndex++;
-                continue;
-            }
-            if (text === "<|system|>") {
-                const label = document.createElement("div");
-                label.classList.add("role-label");
-                label.textContent = "System:";
-                this.appendChild(label);
-                startIndex++;
-                continue;
-            }
-            if (text === "<|user|>") {
-                const label = document.createElement("div");
-                label.classList.add("role-label");
-                label.textContent = "User:";
-                this.appendChild(label);
-                startIndex++;
-                continue;
-            }
-            if (text === "<|assistant|>") {
-                const label = document.createElement("div");
-                label.classList.add("role-label");
-                label.textContent = "Assistant:";
-                this.appendChild(label);
-                startIndex++;
-                continue;
-            }
-            break;
-        }
-        if (operation.result.token_map[operation.result.tokens[0]] === " <|end|>") {
-            startIndex = 1;
-        }
+    createOperationDiv(operation) {
+        const div = document.createElement("div");
+        div.classList.add("operation");
 
         const blockLabel = document.createElement("div");
         blockLabel.classList.add("block-label");
         blockLabel.textContent = '#' + operation.id;
-        this.appendChild(blockLabel);
+        div.appendChild(blockLabel);
 
-        this.cachedLogits[operation.id] = operation.result.logits;
-
-        for (let tokenIdx = startIndex; tokenIdx < operation.result.logits.length; tokenIdx++) {
-            if (operation.name === "feed_tokens") {
-                let logitValue = 0.0;
-                operation.result.logits[tokenIdx].forEach(logit => {
-                    if (logit[0] === operation.result.tokens[tokenIdx]) {
-                        logitValue = logit[1];
-                    }
-                });
-                const text = operation.result.token_map[operation.result.tokens[tokenIdx]];
-                const word = new Word(operation.id, tokenIdx, text, operation.result.tokens[tokenIdx], logitValue, this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, false, callback);
-                if (text.startsWith("\n")) {
-                    this.appendChild(document.createElement("br"));
+        if (operation instanceof OperationEditorBranch) {
+            for (const option of operation.options) {
+                for (const childOperation of option.operations) {
+                    const childDiv = this.createOperationDiv(childOperation);
+                    div.appendChild(childDiv);
                 }
-                this.appendChild(word);
-                if (text.endsWith("\n")) {
-                    this.appendChild(document.createElement("br"));
-                }
-            } else if (operation.name === "completion") {
-                const text = operation.result.token_map[operation.result.logits[tokenIdx][0][0]];
-                const word = new Word(operation.id, tokenIdx, text, operation.result.logits[tokenIdx][0][0], operation.result.logits[tokenIdx][0][1], this.logitScale, operation.result.logits[tokenIdx], operation.result.token_map, true, callback);
-                if (text.startsWith("\n")) {
-                    this.appendChild(document.createElement("br"));
-                }
-                if (text === "<|end|>") {
-                    this.appendChild(document.createElement("br"));
-                } else {
-                    this.appendChild(word);
-                }
-                if (text.endsWith("\n")) {
-                    this.appendChild(document.createElement("br"));
-                }
-            } 
+            }
         }
 
+        this.operationDivs[operation.id] = {
+            div,
+            nextIndex: 0,
+            tokenQueue: [],
+            words: [],
+        };
+
+        return div;
+    }
+
+    addToken(operationId, tokenIndex, tokenId, logits) {
+        const operationDiv = this.operationDivs[operationId];
+        operationDiv.tokenQueue.push([
+            tokenIndex,
+            tokenId,
+            logits,
+        ]);
+        let updatedLogits = false;
+        for (const logit of logits) {
+            if (logit[1] < this.logitScale[0]) {
+                this.logitScale[0] = logit[1];
+                updatedLogits = true;
+            }
+            if (logit[1] > this.logitScale[1]) {
+                this.logitScale[1] = logit[1];
+                updatedLogits = true;
+            }
+        }
+        if (operationDiv.tokenQueue.length > 1) {
+            operationDiv.tokenQueue.sort((a, b) => a[0] - b[0]);
+        }
+        while (operationDiv.tokenQueue.length > 0 && operationDiv.tokenQueue[0][0] === operationDiv.nextIndex) {
+            const token = operationDiv.tokenQueue.shift();
+            const word = this.renderToken(operationId, token[0], token[1], token[2]);
+            if (!updatedLogits && this.logitScale[1] > this.logitScale[0]) {
+                word.updateColor(this.logitScale);
+            }
+            operationDiv.nextIndex++;
+        }
+        if (updatedLogits && this.logitScale[1] > this.logitScale[0]) {
+            for (const otherDiv of Object.values(this.operationDivs)) {
+                for (const word of otherDiv.words) {
+                    word.updateColor(this.logitScale);
+                }
+            }
+        }
+    }
+
+    renderToken(operationId, tokenIndex, tokenId, logits) {
+        const word = new Word(operationId, tokenIndex, tokenId, logits, this.tokenMap, false, this.callback);
+        this.operationDivs[operationId].words.push(word);
+        this.operationDivs[operationId].div.appendChild(word);
+        return word;
     }
 
     renderPopup() {
